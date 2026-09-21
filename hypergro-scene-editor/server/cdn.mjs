@@ -110,7 +110,10 @@ export async function syncFonts(fontsDir, isLicensed = () => false) {
 export async function storeOriginal(id, file, name) { if (!cdnEnabled()) return null; try { const { url } = await uploadBuffer(await readFile(file), name); root.originals[id] = { url, name, at: Date.now() }; await saveRoot(); return url; } catch (e) { console.error('[cdn] original', id, e.message); return null; } }
 
 let rootTimer = null;
-async function saveRoot() { root.updatedAt = Date.now(); await writeFile(rootFile(), JSON.stringify(root, null, 1)); clearTimeout(rootTimer); rootTimer = setTimeout(async () => { try { const { url } = await uploadBuffer(Buffer.from(JSON.stringify(root)), 'hypergro-editor-root.json'); await writeFile(rootUrlFile(), url + '\n'); console.log('[cdn] root index →', url); } catch (e) { console.error('[cdn] root', e.message); } }, 1500); }
+// More than one process can write the index (the server, the backfill script, a second server). Never overwrite: read what is
+// on disk, merge this process's entries over it, then write. An entry only ever gets newer, so merging cannot lose data.
+async function mergeRootFromDisk() { try { const disk = JSON.parse(await readFile(rootFile(), 'utf8')); root.bundles = { ...(disk.bundles || {}), ...root.bundles }; root.originals = { ...(disk.originals || {}), ...root.originals }; for (const k of ['library', 'embedded']) root.fonts[k] = { ...(disk.fonts?.[k] || {}), ...root.fonts[k] }; } catch { /* no index yet */ } }
+async function saveRoot() { await mergeRootFromDisk(); root.updatedAt = Date.now(); await writeFile(rootFile(), JSON.stringify(root, null, 1)); clearTimeout(rootTimer); rootTimer = setTimeout(async () => { try { const { url } = await uploadBuffer(Buffer.from(JSON.stringify(root)), 'hypergro-editor-root.json'); await writeFile(rootUrlFile(), url + '\n'); console.log('[cdn] root index →', url); } catch (e) { console.error('[cdn] root', e.message); } }, 1500); }
 export const rootInfo = async () => ({ bundles: Object.keys(root.bundles).length, fonts: Object.keys(root.fonts.library).length + Object.keys(root.fonts.embedded).length, originals: Object.keys(root.originals).length, updatedAt: root.updatedAt, url: (await readFile(rootUrlFile(), 'utf8').catch(() => '')).trim() || null });
 
 const timers = new Map();
