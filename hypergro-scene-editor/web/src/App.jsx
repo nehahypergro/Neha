@@ -16,6 +16,7 @@ import { getUserName, setUserName } from './lib/user.js';
 import * as api from './lib/api.js';
 import { fail, report, explain, setErrorContext } from './lib/errors.js';
 import * as E from './lib/edit.js';
+import * as R from './lib/rich.js';
 import Rulers from './components/Rulers.jsx';
 import { CropSheet, ResizeSheet, ShortcutsSheet } from './components/EditSheets.jsx';
 import { loadFiles, loadZip, loadUrl, readDrop, addAssets } from './lib/bundle.js';
@@ -453,11 +454,11 @@ export default function App() {
         const el = E.newImageElement(sc, pth, f.name.replace(/\.[^.]+$/, ''), img.naturalWidth, img.naturalHeight); dispatch({ type: 'replace', scene: { ...sc, elements: [...sc.elements, el] }, label: `Added the picture ${el.name}` }); setSel([el.id]);
         const bid = edRef.current?.bundleId; if (bid) { const fd = new FormData(); fd.append('file', f); fd.append('name', clean); const r = await fetch(`/api/bundles/${bid}/assets`, { method: 'POST', body: fd }); if (!r.ok) throw new Error('upload ' + r.status); }
       } catch (e) { setToast(fail(e, 'adding that picture'), 9000); } },
-    textStyle: (el, patch, label) => set(el.id, { text: patch }, label),
-    toggleBold: (el) => { const st = E.styleFrom(!E.isBoldStyle(el.text.fontStyle), E.isItalicStyle(el.text.fontStyle)); set(el.id, { text: { fontStyle: st, postScriptName: null } }, `Made the ${el.name} ${E.isBoldStyle(st) ? 'bold' : 'regular weight'}`); ensureFonts({ elements: [{ text: { ...el.text, fontStyle: st } }] }).then(() => { forgetFonts(); setFontsTick((t) => t + 1); }); },
-    toggleItalic: (el) => { const st = E.styleFrom(E.isBoldStyle(el.text.fontStyle), !E.isItalicStyle(el.text.fontStyle)); set(el.id, { text: { fontStyle: st, postScriptName: null } }, `Made the ${el.name} ${E.isItalicStyle(st) ? 'italic' : 'upright'}`); ensureFonts({ elements: [{ text: { ...el.text, fontStyle: st } }] }).then(() => { forgetFonts(); setFontsTick((t) => t + 1); }); },
-    toggleCase: (el) => set(el.id, { text: { content: E.toggleCase(el.text.content) } }, `Changed the ${el.name} capitals`),
-    toggleList: (el, kind) => set(el.id, { text: { content: E.toggleList(el.text.content, kind), ...(el.text.kind === 'point' ? {} : {}) } }, kind === 'bullet' ? `Made the ${el.name} a bulleted list` : `Made the ${el.name} a numbered list`),
+    textStyle: (el, patch, label) => { if (editingRef.current === el.id && ('underline' in patch || 'strike' in patch) && Object.keys(patch).length === 1) { ctlRef.current.format('underline' in patch ? 'underline' : 'strike'); return; } set(el.id, { text: patch }, label); },
+    toggleBold: (el) => { if (editingRef.current === el.id) { ctlRef.current.format('bold'); ensureFonts(sceneRef.current).then(() => { forgetFonts(); setFontsTick((t) => t + 1); }); return; } const st = E.styleFrom(!E.isBoldStyle(el.text.fontStyle), E.isItalicStyle(el.text.fontStyle)); set(el.id, { text: { fontStyle: st, postScriptName: null } }, `Made the ${el.name} ${E.isBoldStyle(st) ? 'bold' : 'regular weight'}`); ensureFonts({ elements: [{ text: { ...el.text, fontStyle: st } }] }).then(() => { forgetFonts(); setFontsTick((t) => t + 1); }); },
+    toggleItalic: (el) => { if (editingRef.current === el.id) { ctlRef.current.format('italic'); return; } const st = E.styleFrom(E.isBoldStyle(el.text.fontStyle), !E.isItalicStyle(el.text.fontStyle)); set(el.id, { text: { fontStyle: st, postScriptName: null } }, `Made the ${el.name} ${E.isItalicStyle(st) ? 'italic' : 'upright'}`); ensureFonts({ elements: [{ text: { ...el.text, fontStyle: st } }] }).then(() => { forgetFonts(); setFontsTick((t) => t + 1); }); },
+    toggleCase: (el) => { const next = E.toggleCase(el.text.content); set(el.id, { text: { content: next, runs: next.length === el.text.content.length ? el.text.runs || null : null } }, `Changed the ${el.name} capitals`); },
+    toggleList: (el, kind) => { if (editingRef.current === el.id) setEditing(null); const off = el.text.list === kind; const clean = R.stripTypedMarkers(el.text.content, el.text.runs); const lines = clean.content.split('\n').length; const patch = { list: off ? null : kind, content: clean.content, runs: clean.runs || null, ...(el.text.kind === 'point' && !off ? {} : {}) }; const lh = el.text.lineHeight || el.text.fontSize * 1.2; set(el.id, { text: patch, bounds: { height: Math.max(el.bounds.height, Math.round(lines * lh)), ...(el.text.kind === 'point' && !off ? { width: Math.round(el.bounds.width + R.listIndent({ ...el.text, list: kind })) } : {}) } }, off ? `Made the ${el.name} plain text again` : kind === 'bullet' ? `Made the ${el.name} a bulleted list` : `Made the ${el.name} a numbered list`); },
     openCrop: (el) => setSheet({ crop: el.id }),
     applyCrop: (el, c) => { const st = E.cropSet(el, c); set(el.id, st, st.meta.crop ? `Cropped ${el.name}` : `Removed the crop from ${el.name}`); setSheet(null); },
     openResize: () => setSheet({ resize: true }),
@@ -465,7 +466,9 @@ export default function App() {
     setSize: (el, patch) => { const b = el.bounds; const lock = el.type === 'image'; let w = patch.width ?? b.width, h = patch.height ?? b.height; if (lock) { const r = b.width / b.height; if (patch.width != null) h = w / r; else w = h * r; } w = Math.max(4, Math.round(w)); h = Math.max(4, Math.round(h)); set(el.id, { bounds: { width: w, height: h } }, `Resized ${el.name} to ${w} × ${h} px`); },
     elDown: (ev, id) => startDrag(ev, id, 'move'), handleDown: (ev, id, h) => startDrag(ev, id, 'resize', h), rotateDown: (ev, id) => startDrag(ev, id, 'rotate'), hover: setHover,
     editText: (id) => { const el = sceneRef.current?.elements.find((x) => x.id === id); if (!el || el.type !== 'text' || el.locked) return; setFocusKey(null); setSel([id]); editSnapped.current = false; setEditing(id); },
-    editInput: (id, text) => { if (!editSnapped.current) { const el = sceneRef.current?.elements.find((x) => x.id === id); dispatch({ type: 'snapshot', label: `Changed the ${el?.name || 'text'}`, ids: [id] }); editSnapped.current = true; } set(id, { text: { content: text.replace(/\n$/, '') } }, null, false); },
+    editInput: (id, text) => { if (!editSnapped.current) { const el = sceneRef.current?.elements.find((x) => x.id === id); dispatch({ type: 'snapshot', label: `Changed the ${el?.name || 'text'}`, ids: [id] }); editSnapped.current = true; } const rich = typeof text === 'string' ? { content: text.replace(/\n$/, ''), runs: null } : text; set(id, { text: { content: rich.content, runs: rich.runs || null } }, null, false); },
+    // Style only the highlighted words while typing. The browser applies it to the selection, then the box is read back into content + ranges.
+    format: (cmd) => { if (!editingRef.current) return false; try { document.execCommand('styleWithCSS', false, false); document.execCommand(cmd === 'strike' ? 'strikeThrough' : cmd, false, null); } catch { return false; } const node = document.querySelector('.el.text.editing'); if (node) ctlRef.current.editInput(editingRef.current, R.fromDom(node)); return true; },
     editEnd: () => setEditing(null),
     fieldEdit: (id, text) => { if (fieldSnap.current.id !== id || !fieldSnap.current.snapped) { const el = sceneRef.current?.elements.find((x) => x.id === id); dispatch({ type: 'snapshot', label: `Changed the ${el?.name || 'text'}`, ids: [id] }); fieldSnap.current = { id, snapped: true }; } set(id, { text: { content: text } }, null, false); },
     fieldEnd: () => { fieldSnap.current = { id: null, snapped: false }; },
@@ -517,7 +520,7 @@ export default function App() {
       ) : (
         <div className={"editor" + (preview ? " preview-mode" : "")}>
           <EditorHeader kit={kit} name={displayName || ed.fileName || scene.document.name} saveState={saveState} exporting={exporting} exportTick={exportTick} lastFormat={lastFormat} langProgress={langProgress} designer={DESIGNER} canUndo={ed.undo.length > 0} canRedo={ed.redo.length > 0} undo={ed.undo} redo={ed.redo} past={past} versions={versions} user={user} onUser={setUser} contentsOpen={contentsOpen} hasCheck={!!art?.readiness} variants={art?.variants || []} language={art?.language || null} ctl={ctl} />
-          <Toolbar scene={scene} sel={sel} kit={kit} palette={palette} fullPalette={fullPalette} surfaces={surfaces} ctl={ctl} />
+          <Toolbar scene={scene} sel={sel} kit={kit} palette={palette} fullPalette={fullPalette} surfaces={surfaces} editing={editing} ctl={ctl} />
           {art?.readiness && art.readiness.grade !== 'ready' && !bannerGone[ed.bundleId] && !dismissedBanner(ed.bundleId) && (
             <div className={'ready-banner ' + (art.readiness.grade === 'limited' ? 'bad' : 'warn')} role="status">
               <b>{art.readiness.grade === 'limited' ? 'Limited' : 'Partly editable'}</b><span>{art.readiness.items.find((i) => !i.ok)?.text}</span>

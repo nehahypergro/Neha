@@ -408,3 +408,15 @@ select { height: 32px; padding: 0 8px; }
 .guide.even.x { border-left-width: 1px; } .guide.even.y { border-top-width: 1px; }
 .bottom { overflow-x: auto; }
 .bottom > *, .bottom .check, .bottom .linkbtn { white-space: nowrap; flex-shrink: 0; }
+
+/* mixed-style text + real lists: paragraphs are blocks, list markers live in a gutter so wrapped lines hang under the text */
+.el.text .para { position: relative; min-height: 1lh; }
+.el.text.list { counter-reset: hgli; }
+.el.text.list .para { padding-left: var(--li, 1.2em); }
+.el.text.list .para::before { position: absolute; left: 0; top: 0; text-align: left; font-weight: inherit; font-style: normal; text-decoration: none; }
+.el.text.list-bullet .para::before { content: '•'; }
+.el.text.list-number .para { counter-increment: hgli; }
+.el.text.list-number .para::before { content: counter(hgli) '.'; }
+.el.text.list .para.empty { counter-increment: none; }
+.el.text.list .para.empty::before { content: none; }
+.el.text.editing .para:empty::after { content: '\200b'; }

@@ -1,3 +1,4 @@
+import { segText } from './rich.js';
 // File exports rendered from the scene: JPG/PNG (canvas), SVG (vector), and vector PDF / .ai. The .ai file is a
 // PDF-compatible document (which is what Illustrator itself writes): Illustrator opens it as editable vectors and
 // live text. Brand fonts are embedded when the server's font proxy can supply TTFs; otherwise text falls back to
@@ -99,11 +100,13 @@ export function buildSvg(scene, assets, collected, registered = null) {
     if (pic) { const cp = coverPad(t); const cover = e.meta?.coverFill ? `<rect x="${x - cp}" y="${y - cp}" width="${w + 2 * cp}" height="${h + 2 * cp}" fill="${e.meta.coverFill}"${rot}/>` : ''; return cover + `<image href="${pic.href}" x="${pic.x}" y="${pic.y}" width="${pic.w}" height="${pic.h}" preserveAspectRatio="none"${rot}${op}/>`; }
     const tx = t.align === 'center' ? x + w / 2 : t.align === 'right' ? x + w : x, anchor = t.align === 'center' ? 'middle' : t.align === 'right' ? 'end' : 'start';
     const cp = coverPad(t); const cover = e.meta?.coverFill ? `<rect x="${x - cp}" y="${y - cp}" width="${w + 2 * cp}" height="${h + 2 * cp}" fill="${e.meta.coverFill}"${rot}/>` : '';
-    const pf = registered ? pdfTextFont(t, registered) : { family: t.fontFamily || 'Helvetica', weight: weightOf(t.fontStyle), italic: isItalic(t.fontStyle) };
-    const attrs = `font-family="${esc(pf.family)}" font-size="${t.fontSize}" font-weight="${pf.weight}" font-style="${pf.italic ? 'italic' : 'normal'}" letter-spacing="${t.letterSpacing || 0}" fill="${e.fill || '#000'}"`;
+    const attrs = (tt) => { const pf = registered ? pdfTextFont(tt, registered) : { family: tt.fontFamily || 'Helvetica', weight: weightOf(tt.fontStyle), italic: isItalic(tt.fontStyle) }; return `font-family="${esc(pf.family)}" font-size="${tt.fontSize}" font-weight="${pf.weight}" font-style="${pf.italic ? 'italic' : 'normal'}" letter-spacing="${tt.letterSpacing || 0}" fill="${e.fill || '#000'}"`; };
     return cover + layoutText(measure, e).map((line) => { const by = y + baselineY(t, line.i);
-      const glyphs = line.words ? line.words.map((wd) => `<text x="${wd.x}" y="${by}" ${attrs} text-anchor="start"${rot}${op} xml:space="preserve">${esc(wd.text)}</text>`).join('') : `<text x="${tx}" y="${by}" ${attrs} text-anchor="${anchor}"${rot}${op} xml:space="preserve">${esc(line.text)}</text>`;
-      return glyphs + decorationBars(t, line, y).map((bar) => `<rect x="${bar.x}" y="${bar.y}" width="${bar.w}" height="${bar.h}" fill="${e.fill || '#000'}"${rot}${op}/>`).join(''); }).join('');
+      // A plain line keeps its anchor (exact even if the PDF font's metrics differ a hair from the browser's); mixed styles, justified lines and list items are placed part by part.
+      const glyphs = line.simple ? `<text x="${tx}" y="${by}" ${attrs(segText(t, line.parts[0]?.seg))} text-anchor="${anchor}"${rot}${op} xml:space="preserve">${esc(line.text)}</text>`
+        : line.parts.map((pt) => `<text x="${pt.x}" y="${by}" ${attrs(segText(t, pt.seg))} text-anchor="start"${rot}${op} xml:space="preserve">${esc(pt.text)}</text>`).join('');
+      const mark = line.marker ? `<text x="${line.marker.x}" y="${by}" ${attrs(t)} text-anchor="start"${rot}${op} xml:space="preserve">${esc(line.marker.text)}</text>` : '';
+      return mark + glyphs + decorationBars(t, line, y).map((bar) => `<rect x="${bar.x}" y="${bar.y}" width="${bar.w}" height="${bar.h}" fill="${e.fill || '#000'}"${rot}${op}/>`).join(''); }).join('');
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#ffffff"/>${parts.join('')}</svg>`;
 }
@@ -112,10 +115,11 @@ const b64 = (buf) => { let s = ''; const bytes = new Uint8Array(buf); for (let i
 /** Register the TTFs the scene's text needs so svg2pdf can embed them. Missing fonts fall back to Helvetica. */
 async function registerFonts(doc, scene) {
   const need = new Map();
-  for (const e of scene.elements) if (e.type === 'text' && e.visible && e.text?.fontFamily) {
-    const fam = pdfFamily(e.text), weight = weightOfText(e.text), italic = isItalic(e.text.fontStyle) && !scriptFontsFor(e.text.content).length;
+  const styled = (e) => { const out = [e.text]; for (const r of e.text.runs || []) if (r.bold || r.italic) out.push(segText(e.text, r)); return out; };
+  for (const e of scene.elements) if (e.type === 'text' && e.visible && e.text?.fontFamily) for (const tx of styled(e)) {
+    const fam = pdfFamily(tx), weight = weightOfText(tx), italic = isItalic(tx.fontStyle) && !scriptFontsFor(e.text.content).length;
     if (scriptFontsFor(e.text.content).length) continue; // Indic/Arabic lines go into the PDF as images (see rasteriseScriptText)
-    need.set(`${fam}|${weight}|${italic ? 1 : 0}`, { fam, weight, italic, ps: fam === e.text.fontFamily ? e.text.postScriptName || '' : '', alias: pdfAlias(fam, weight), style: italic ? (weight === 700 ? 'bolditalic' : 'italic') : weight === 700 ? 'bold' : 'normal' });
+    need.set(`${fam}|${weight}|${italic ? 1 : 0}`, { fam, weight, italic, ps: fam === tx.fontFamily ? tx.postScriptName || '' : '', alias: pdfAlias(fam, weight), style: italic ? (weight === 700 ? 'bolditalic' : 'italic') : weight === 700 ? 'bold' : 'normal' });
   }
   const embedded = [], registered = new Set();
   for (const f of need.values()) {

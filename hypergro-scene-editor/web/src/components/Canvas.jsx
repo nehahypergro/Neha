@@ -1,5 +1,6 @@
 import React from 'react';
 import { cropCss } from '../lib/edit.js';
+import { paragraphs, toHtml, fromDom, listIndent } from '../lib/rich.js';
 import { weightOf, isItalic, fontFamilyCss, lineHeightOf, assetUrl, isCssShape, coverPad } from '../lib/render.js';
 
 const HANDLES = [['nw', 0, 0], ['n', .5, 0], ['ne', 1, 0], ['e', 1, .5], ['se', 1, 1], ['s', .5, 1], ['sw', 0, 1], ['w', 0, .5]];
@@ -10,7 +11,7 @@ function elStyle(e, url) {
   const b = e.bounds, t = e.text || {}, isT = e.type === 'text';
   const st = { left: b.x, top: b.y, width: b.width, height: b.height, zIndex: e.zIndex + 1, opacity: e.opacity ?? 1, display: e.visible ? undefined : 'none',
     transform: e.transform?.rotation ? `rotate(${-e.transform.rotation}deg)` : undefined, cursor: e.locked ? 'default' : 'move', pointerEvents: e.meta?.collapsedGroup ? 'none' : undefined };
-  if (isT) Object.assign(st, { color: e.fill || '#000', fontSize: t.fontSize, fontWeight: weightOf(t.fontStyle), fontStyle: isItalic(t.fontStyle) ? 'italic' : 'normal', fontFamily: fontFamilyCss(t.fontFamily),
+  if (isT) Object.assign(st, { '--li': listIndent(t) + 'px', color: e.fill || '#000', fontSize: t.fontSize, fontWeight: weightOf(t.fontStyle), fontStyle: isItalic(t.fontStyle) ? 'italic' : 'normal', fontFamily: fontFamilyCss(t.fontFamily),
     lineHeight: lineHeightOf(t) + 'px', letterSpacing: (t.letterSpacing || 0) + 'px', textAlign: t.align || 'left', textAlignLast: t.align === 'justify' ? 'left' : undefined, textDecoration: [t.underline && 'underline', t.strike && 'line-through'].filter(Boolean).join(' ') || undefined, whiteSpace: t.kind === 'point' ? 'pre' : 'pre-wrap', backgroundColor: e.meta?.coverFill || 'transparent', boxShadow: e.meta?.coverFill ? `0 0 0 ${coverPad(t)}px ${e.meta.coverFill}` : undefined });
   else if (url) Object.assign(st, cropCss(e.meta?.crop) || {}, { backgroundImage: `url("${url}")`, transform: [st.transform, e.transform?.scaleY === -1 ? 'scaleY(-1)' : ''].filter(Boolean).join(' ') || undefined });
   else Object.assign(st, { backgroundColor: e.fill || '#e6e4de', borderRadius: e.meta?.kind === 'ellipse' ? '50%' : (e.meta?.cornerRadius || 0) + 'px' });
@@ -18,8 +19,8 @@ function elStyle(e, url) {
 }
 let pendingCaret = null;
 const caretFromPoint = (x, y) => { if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y); const p = document.caretPositionFromPoint?.(x, y); if (!p) return null; const r = document.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); return r; };
-const startEditing = (node, content) => {
-  if (!node || node.dataset.init) return; node.dataset.init = '1'; node.innerText = content; node.focus();
+const startEditing = (node, text) => {
+  if (!node || node.dataset.init) return; node.dataset.init = '1'; node.innerHTML = toHtml(text); node.focus(); try { document.execCommand('styleWithCSS', false, false); document.execCommand('defaultParagraphSeparator', false, 'div'); } catch { /* older browsers */ }
   let range = null;
   if (pendingCaret) { try { range = caretFromPoint(pendingCaret.x, pendingCaret.y); } catch {} if (range && !node.contains(range.startContainer)) range = null; pendingCaret = null; }
   if (!range) { range = document.createRange(); range.selectNodeContents(node); range.collapse(false); }
@@ -43,17 +44,18 @@ export default function Canvas({ scene, W, H, zoom, assets, sel, hover, editing,
             const isEditing = isT && editing === e.id, selected = sel.includes(e.id);
             const style = elStyle(e, url); if (isEditing) Object.assign(style, { userSelect: 'text', cursor: 'text' }); if (showOriginal) style.visibility = 'hidden';
             return (
-              <div key={e.id + (isEditing ? ':edit' : '')} className={'el ' + (isT ? 'text' : 'gfx') + (selected ? ' sel' : hover === e.id ? ' hov' : '') + (e.locked ? ' locked' : '') + (isEditing ? ' editing' : '')} style={style}
+              <div key={e.id + (isEditing ? ':edit' : '')} className={'el ' + (isT ? 'text' + (e.text.list ? ' list list-' + e.text.list : '') : 'gfx') + (selected ? ' sel' : hover === e.id ? ' hov' : '') + (e.locked ? ' locked' : '') + (isEditing ? ' editing' : '')} style={style}
                 title={isEditing ? undefined : e.locked ? `${e.name} · fixed by brand` : e.name} tabIndex={isEditing ? -1 : 0} role="button" aria-label={e.name}
                 onMouseDown={(ev) => ctl.elDown(ev, e.id)} onMouseEnter={() => ctl.hover(e.id)} onMouseLeave={() => ctl.hover(null)}
                 onFocus={() => { if (!isEditing && !selected) ctl.select(e.id); }}
                 onDoubleClick={isT && !isEditing && e.text.encoding !== 'legacy' ? (ev) => { pendingCaret = { x: ev.clientX, y: ev.clientY }; ctl.editText(e.id); } : undefined}
                 contentEditable={isEditing || undefined} suppressContentEditableWarning={isEditing || undefined} spellCheck={isEditing ? false : undefined}
-                ref={isEditing ? (node) => startEditing(node, e.text.content) : undefined}
-                onInput={isEditing ? (ev) => ctl.editInput(e.id, ev.currentTarget.innerText) : undefined}
+                ref={isEditing ? (node) => startEditing(node, e.text) : undefined}
+                onInput={isEditing ? (ev) => ctl.editInput(e.id, fromDom(ev.currentTarget)) : undefined}
+                onPaste={isEditing ? (ev) => { ev.preventDefault(); const txt = (ev.clipboardData || window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, txt); } : undefined}
                 onBlur={isEditing ? ctl.editEnd : undefined}
-                onKeyDown={isEditing ? (ev) => { ev.stopPropagation(); if (ev.key === 'Escape' || ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter')) { ev.preventDefault(); ev.currentTarget.blur(); } } : undefined}>
-                {isEditing ? null : isT ? e.text.content : missing ? `${e.name} (image missing)` : ''}
+                onKeyDown={isEditing ? (ev) => { ev.stopPropagation(); const meta = ev.metaKey || ev.ctrlKey, k = ev.key.toLowerCase(); if (ev.key === 'Escape' || (meta && ev.key === 'Enter')) { ev.preventDefault(); ev.currentTarget.blur(); } else if (meta && !ev.shiftKey && (k === 'b' || k === 'i' || k === 'u')) { ev.preventDefault(); ctl.format({ b: 'bold', i: 'italic', u: 'underline' }[k]); } else if (meta && k === 's') { ev.preventDefault(); ctl.saveNow(); } } : undefined}>
+                {isEditing ? null : isT ? paragraphs(e.text).map((p, pi) => <div key={pi} className={'para' + (p.text.trim() ? '' : ' empty')}>{p.segs.length ? p.segs.map((sg, si) => (sg.bold || sg.italic || sg.underline || sg.strike ? <span key={si} style={{ fontWeight: sg.bold ? 700 : undefined, fontStyle: sg.italic ? 'italic' : undefined, textDecoration: [sg.underline && 'underline', sg.strike && 'line-through'].filter(Boolean).join(' ') || undefined }}>{sg.text}</span> : sg.text)) : <br />}</div>) : missing ? `${e.name} (image missing)` : ''}
               </div>
             );
           })}

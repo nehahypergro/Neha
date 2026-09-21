@@ -1,6 +1,7 @@
 // Live guardrail checks: text overflow, tiny logos, safe-zone violations, unavailable fonts, missing assets, plus
 // notes from ingestion. Every issue carries an action the panel can run.
-import { fontString, wrapLines, lineHeightOf, assetUrl, isCssShape } from './render.js';
+import { fontString, wrapLines, lineHeightOf, assetUrl, isCssShape, layoutText } from './render.js';
+import { listIndent } from './rich.js';
 import { isBrandColor, nearestBrandColor, isBrandFont, brandFontFor } from './brand.js';
 import { libraryHas } from './fontlib.js';
 let ctx = null; const measure = () => (ctx ||= document.createElement('canvas').getContext('2d'));
@@ -19,9 +20,9 @@ export function fontAvailable(family) {
 export const forgetFonts = () => fontCache.clear();
 
 export function textFit(e) {
-  const t = e.text, c = measure(); c.font = fontString(t); if ('letterSpacing' in c) c.letterSpacing = (t.letterSpacing || 0) + 'px';
-  const lines = wrapLines(c, t.content, t.kind === 'point' ? Infinity : e.bounds.width);
-  const maxW = Math.max(0, ...lines.map((l) => c.measureText(l).width)), h = lines.length * lineHeightOf(t);
+  // Same layout the painters use, so bold words, list gutters and wrapping are judged exactly as they will print.
+  const t = e.text, c = measure(); const lines = layoutText(c, e); const indent = listIndent(t);
+  const maxW = Math.max(0, ...lines.map((l) => l.parts.reduce((n, pt) => n + pt.width, 0) + indent)), h = lines.length * lineHeightOf(t);
   const wOk = maxW <= e.bounds.width * 1.02 + 2, hOk = t.kind === 'point' || h <= e.bounds.height * 1.05 + 2;
   return { ok: wOk && hOk, maxW, h, lines: lines.length, wOk, hOk };
 }

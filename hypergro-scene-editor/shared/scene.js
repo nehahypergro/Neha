@@ -57,7 +57,7 @@ export function understand(scene){
 export function applyOps(scene,ops){
   const map=new Map(scene.elements.map(e=>[e.id,e]));
   (ops||[]).forEach(o=>{ const e=map.get(o.id); if(!e||!o.set) return; const p=o.set, n={...e};
-    if(p.bounds) n.bounds={...e.bounds,...p.bounds}; if(p.text&&e.text) n.text={...e.text,...p.text}; if(p.transform) n.transform={...e.transform,...p.transform}; if(p.meta) n.meta={...(e.meta||{}),...p.meta};
+    if(p.bounds) n.bounds={...e.bounds,...p.bounds}; if(p.text&&e.text){ n.text={...e.text,...p.text}; if(p.text.content!==undefined&&p.text.content!==e.text.content&&p.text.runs===undefined) n.text.runs=null; /* new words from anywhere but the rich editor: the old bold/italic ranges no longer point at the right letters */ } if(p.transform) n.transform={...e.transform,...p.transform}; if(p.meta) n.meta={...(e.meta||{}),...p.meta};
     ['fill','opacity','visible','locked','name','role','zIndex','asset','assetSvg','renderMode','semanticGroup','stroke','gradient','editable'].forEach(k=>{ if(p[k]!==undefined) n[k]=p[k]; });
     map.set(o.id,n); });
   return {...scene,elements:[...map.values()]};

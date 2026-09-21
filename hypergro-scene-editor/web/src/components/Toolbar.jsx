@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { isCssShape } from '../lib/render.js';
 import { FONT_CHOICES, STYLE_CHOICES } from '../lib/palette.js';
 import { Swatches, LogoPicker } from './Form.jsx';
-import { isBoldStyle, isItalicStyle, listKind } from '../lib/edit.js';
+import { isBoldStyle, isItalicStyle } from '../lib/edit.js';
+import { flagsAt } from '../lib/rich.js';
 
 /** Align, space and layer order in one menu. One item aligns to the page; several align to each other. */
 function Arrange({ els, ctl }) {
@@ -51,12 +52,13 @@ function Actions({ el, els, ctl, reset }) {
   );
 }
 
-function TextBar({ el, kit, palette, fullPalette, ctl }) {
+function TextBar({ el, kit, palette, fullPalette, editing, ctl }) {
   const brandFams = kit ? [[kit.fonts.headline.family, `${kit.fonts.headline.family} · headlines`], [kit.fonts.body.family, `${kit.fonts.body.family} · body copy`]] : [];
   const fonts = [...brandFams, ...FONT_CHOICES.filter((f) => !brandFams.some(([b]) => b === f)).map((f) => [f, f])];
   if (el.text.fontFamily && !fonts.some(([f]) => f === el.text.fontFamily)) fonts.push([el.text.fontFamily, el.text.fontFamily]);
   const styles = STYLE_CHOICES.includes(el.text.fontStyle) ? STYLE_CHOICES : [el.text.fontStyle, ...STYLE_CHOICES];
-  const t = el.text; const legacy = t.encoding === 'legacy';
+  const t = el.text; const legacy = t.encoding === 'legacy'; const all = flagsAt(t); const keep = (ev) => ev.preventDefault(); // keep the text selection when a style button is pressed
+  const tip = editing === el.id ? 'the highlighted words' : 'the whole box · double-click the text and highlight words to style just those';
   return (
     <>
       {legacy && <><span className="pill legacy" title={`Typed in ${t.fontFamily}. The letters are keystrokes for that font, so new words or another font would show wrong characters. Size, colour and position are fine.`}>Legacy {el.meta?.legacyScript || 'Indic'} font · words can’t be changed here</span><button className="btn small" onClick={() => ctl.readWords(el)} title="Reads the printed words from the original design and turns them into real text you can edit and translate">Read the words</button></>}
@@ -67,14 +69,14 @@ function TextBar({ el, kit, palette, fullPalette, ctl }) {
       <span className="colour-a" title="Text colour" aria-hidden="true">A<i style={{ background: el.fill || '#000' }} /></span>
       <Swatches label="Text colour" value={el.fill} palette={palette} more={fullPalette} onChange={(c) => ctl.set(el.id, { fill: c }, `Recoloured the ${el.name}`)} />
       <Vs />
-      <button className={'tgl' + (isBoldStyle(t.fontStyle) ? ' on' : '')} disabled={legacy} aria-pressed={isBoldStyle(t.fontStyle)} title="Bold (⌘B)" onClick={() => ctl.toggleBold(el)}>B</button>
-      <button className={'tgl i' + (isItalicStyle(t.fontStyle) ? ' on' : '')} disabled={legacy} aria-pressed={isItalicStyle(t.fontStyle)} title="Italic (⌘I)" onClick={() => ctl.toggleItalic(el)}>I</button>
-      <button className={'tgl u' + (t.underline ? ' on' : '')} aria-pressed={!!t.underline} title="Underline (⌘U)" onClick={() => ctl.textStyle(el, { underline: !t.underline }, `${t.underline ? 'Removed the underline from' : 'Underlined'} the ${el.name}`)}>U</button>
-      <button className={'tgl s' + (t.strike ? ' on' : '')} aria-pressed={!!t.strike} title="Strikethrough" onClick={() => ctl.textStyle(el, { strike: !t.strike }, `${t.strike ? 'Removed the strikethrough from' : 'Struck through'} the ${el.name}`)}>S</button>
+      <button onMouseDown={keep} className={'tgl' + (isBoldStyle(t.fontStyle) || all.bold ? ' on' : '')} disabled={legacy} aria-pressed={isBoldStyle(t.fontStyle) || all.bold} title={`Bold (⌘B) · ${tip}`} onClick={() => ctl.toggleBold(el)}>B</button>
+      <button onMouseDown={keep} className={'tgl i' + (isItalicStyle(t.fontStyle) || all.italic ? ' on' : '')} disabled={legacy} aria-pressed={isItalicStyle(t.fontStyle) || all.italic} title={`Italic (⌘I) · ${tip}`} onClick={() => ctl.toggleItalic(el)}>I</button>
+      <button onMouseDown={keep} className={'tgl u' + (t.underline || all.underline ? ' on' : '')} aria-pressed={!!t.underline || all.underline} title={`Underline (⌘U) · ${tip}`} onClick={() => ctl.textStyle(el, { underline: !t.underline }, `${t.underline ? 'Removed the underline from' : 'Underlined'} the ${el.name}`)}>U</button>
+      <button onMouseDown={keep} className={'tgl s' + (t.strike || all.strike ? ' on' : '')} aria-pressed={!!t.strike || all.strike} title={`Strikethrough · ${tip}`} onClick={() => ctl.textStyle(el, { strike: !t.strike }, `${t.strike ? 'Removed the strikethrough from' : 'Struck through'} the ${el.name}`)}>S</button>
       <button className="tgl" disabled={legacy} title="UPPERCASE on / off (⌘⇧K)" onClick={() => ctl.toggleCase(el)}>aA</button>
       <Vs />
-      <button className={'tgl' + (listKind(t.content) === 'bullet' ? ' on' : '')} disabled={legacy} title="Bulleted list" aria-label="Bulleted list" onClick={() => ctl.toggleList(el, 'bullet')}>•≡</button>
-      <button className={'tgl' + (listKind(t.content) === 'number' ? ' on' : '')} disabled={legacy} title="Numbered list" aria-label="Numbered list" onClick={() => ctl.toggleList(el, 'number')}>1≡</button>
+      <button className={'tgl' + (t.list === 'bullet' ? ' on' : '')} disabled={legacy} title="Bulleted list" aria-label="Bulleted list" onClick={() => ctl.toggleList(el, 'bullet')}>•≡</button>
+      <button className={'tgl' + (t.list === 'number' ? ' on' : '')} disabled={legacy} title="Numbered list" aria-label="Numbered list" onClick={() => ctl.toggleList(el, 'number')}>1≡</button>
       <Vs />
       <span className="seg small" role="radiogroup" aria-label="Alignment">{['left', 'center', 'right', 'justify'].map((a) => <button key={a} className={(t.align || 'left') === a ? 'on' : ''} aria-label={`Align ${a}`} title={`Align ${a}`} onClick={() => ctl.set(el.id, { text: { align: a } }, `Aligned the ${el.name} ${a}`)}>{a === 'left' ? '⇤' : a === 'center' ? '☰' : a === 'right' ? '⇥' : '▤'}</button>)}</span>
       <Vs />
@@ -112,14 +114,14 @@ function ShapeBar({ el, palette, fullPalette, ctl }) {
   );
 }
 
-export default function Toolbar({ scene, sel, kit, palette, fullPalette, surfaces = {}, ctl }) {
+export default function Toolbar({ scene, sel, kit, palette, fullPalette, surfaces = {}, editing = null, ctl }) {
   const els = sel.map((id) => scene?.elements.find((e) => e.id === id)).filter(Boolean);
   const el = els[0];
   let body;
   if (!el) body = <><button className="btn small" onClick={ctl.addText} title="Add a text box (T)">＋ Text</button><label className="btn small" title="Add a picture from your computer">＋ Picture<input type="file" accept="image/*" onChange={(ev) => { const f = ev.target.files[0]; ev.target.value = ''; if (f) ctl.addImage(f); }} /></label><Vs /><span className="hint">Click anything to change it. Double-click text to type. Drag a box to select several.</span><span className="grow" /><button className="linkbtn" onClick={ctl.showShortcuts}>Keyboard shortcuts</button></>;
   else if (els.length > 1) body = <><span className="hint strong">{els.length} items selected</span><button className="btn small" onClick={() => ctl.group(els.map((e) => e.id))} title="⌘G">Group</button><Actions els={els} ctl={ctl} /></>;
   else if (el.locked) body = <span className="lockbar"><span className="pill">🔒 Fixed by brand</span><span>{el.name} stays as the brand book sets it, so the creative stays on brand.</span><button className="linkbtn" onClick={() => ctl.setLock(el, false)}>Unlock</button></span>;
-  else if (el.type === 'text') body = <TextBar el={el} kit={kit} palette={palette} fullPalette={fullPalette} ctl={ctl} />;
+  else if (el.type === 'text') body = <TextBar el={el} kit={kit} palette={palette} fullPalette={fullPalette} editing={editing} ctl={ctl} />;
   else if (isCssShape(el)) body = <ShapeBar el={el} palette={palette} fullPalette={fullPalette} ctl={ctl} />;
   else body = <ImageBar el={el} kit={kit} surface={surfaces[el.id]?.surface} ctl={ctl} />;
   return <div className="ctx" role="toolbar" aria-label={el ? `${el.name} tools` : 'Tools'} onMouseDown={(e) => e.stopPropagation()}>{body}</div>;
