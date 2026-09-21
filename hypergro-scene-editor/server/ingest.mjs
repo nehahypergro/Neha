@@ -14,6 +14,7 @@ import { normalize, understand } from '../shared/scene.js';
  * @param {string} outDir  bundle folder to create
  * @param {{classify?:boolean, onStep?:(step:string)=>void, name?:string|null}} opts  name overrides document.name (defaults to the file's basename)
  */
+import { fitOverlaysToInk } from './inkfit.mjs';
 export async function ingest(src, outDir, { classify: doClassify = true, onStep = () => {}, name = null } = {}) {
   onStep('extract');
   const ex = await extract(src, outDir, { name });
@@ -26,6 +27,8 @@ export async function ingest(src, outDir, { classify: doClassify = true, onStep 
   } else if (doClassify) scene.warnings.push('No Anthropic credentials on the server; roles were assigned heuristically');
   onStep('understand');
   scene = understand(normalize(scene));
+  // Rebuilt (outlined) text: replace the vision estimate of size and position with a measurement of the original pixels.
+  try { const fontsDir = path.join(path.resolve(process.env.DATA_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data')), 'fonts'); const fit = await fitOverlaysToInk(scene, outDir, fontsDir); scene = fit.scene; } catch (e) { console.warn('[ingest] ink fit skipped:', e.message); }
   scene.source = { ...(scene.source || {}), parser: 'mupdf', classifier: steps.classifier };
   await writeFile(path.join(outDir, 'scene.json'), JSON.stringify(scene, null, 2));
   onStep('done');

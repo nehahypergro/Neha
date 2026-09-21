@@ -124,7 +124,9 @@ const FONTS = path.join(DATA, 'fonts'); await mkdir(FONTS, { recursive: true });
 app.get('/api/fonts/:family/:weight', async (req, res) => {
   const family = req.params.family, weight = /^\d+$/.test(req.params.weight) ? +req.params.weight : 400, italic = req.query.italic === '1';
   // 1. the team's own font library (matched by PostScript name, then family + weight)
-  try { const hit = await library.find({ postScriptName: req.query.ps, family, weight, italic }); if (hit) { res.type(hit.file.endsWith('.otf') ? 'font/otf' : 'font/ttf'); return res.sendFile(library.pathOf(hit)); } } catch {}
+  // A partial font (pulled out of a designer's file) only has that file's letters, so it is the last resort, after Google.
+  let partial = null; const sendHit = (hit) => { if (hit.subset) res.set('X-Font-Partial', '1'); res.type(hit.file.endsWith('.otf') ? 'font/otf' : 'font/ttf'); return res.sendFile(library.pathOf(hit)); };
+  try { const hit = await library.find({ postScriptName: req.query.ps, family, weight, italic }); if (hit && !hit.subset) return sendHit(hit); partial = hit || null; } catch {}
   // 2. Google Fonts (TTF only comes back for a non-browser user agent), cached on disk
   const key = `${family.replace(/[^\w-]+/g, '_')}-${weight}${italic ? 'i' : ''}.ttf`, cached = path.join(FONTS, key);
   if (existsSync(cached)) return res.type('font/ttf').sendFile(cached);
@@ -133,9 +135,9 @@ app.get('/api/fonts/:family/:weight', async (req, res) => {
     const script = family.match(/^Noto (?:Sans|Serif) (\w+)$/)?.[1]?.toLowerCase();
     const subset = script && script !== 'mono' && script !== 'display' ? `${script},latin` : 'latin,latin-ext';
     const css = await (await fetch(`https://fonts.googleapis.com/css?family=${encodeURIComponent(family)}:${weight}${italic ? 'i' : ''}&subset=${subset}`, { headers: { 'User-Agent': 'curl/8' } })).text();
-    const url = css.match(/url\((https:[^)]+\.ttf)\)/)?.[1]; if (!url) return res.status(404).json({ error: 'no TTF for that family' });
+    const url = css.match(/url\((https:[^)]+\.ttf)\)/)?.[1]; if (!url) { if (partial) return sendHit(partial); return res.status(404).json({ error: 'no TTF for that family' }); }
     const buf = Buffer.from(await (await fetch(url)).arrayBuffer()); await writeFile(cached, buf); res.type('font/ttf').send(buf);
-  } catch (e) { res.status(502).json({ error: e.message }); }
+  } catch (e) { if (partial) return sendHit(partial); res.status(502).json({ error: e.message }); }
 });
 // ---- team font library: fonts the brand uses, uploaded once, served to the editor and embedded in exports
 app.get('/api/fontlib', async (req, res) => res.json(await library.scan()));

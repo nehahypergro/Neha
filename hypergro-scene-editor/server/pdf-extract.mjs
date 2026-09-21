@@ -89,11 +89,11 @@ export class ExtractError extends Error { constructor(msg, code = 'EXTRACT_FAIL'
 // Walk a filled path: bounds in device space, plus whether it is a rectangle / rounded rectangle / ellipse that can be
 // promoted to an editable shape element (drawn by the editor as a CSS rect instead of being baked into the artwork raster).
 function inspectPath(pth, ctm) {
-  let lines = 0, curves = 0, subpaths = 0, cur = null; const anchors = [], all = [], hlines = [];
+  let lines = 0, curves = 0, subpaths = 0, cur = null; const anchors = [], all = [], hlines = [], arcs = [];
   pth.walk({
     moveTo(x, y) { subpaths++; cur = [x, y]; anchors.push(cur); all.push(cur); },
     lineTo(x, y) { lines++; if (cur && Math.abs(y - cur[1]) < 0.01) hlines.push(Math.abs(x - cur[0])); cur = [x, y]; anchors.push(cur); all.push(cur); },
-    curveTo(x1, y1, x2, y2, x3, y3) { curves++; all.push([x1, y1], [x2, y2]); cur = [x3, y3]; anchors.push(cur); all.push(cur); },
+    curveTo(x1, y1, x2, y2, x3, y3) { curves++; if (cur) arcs.push([cur, [x3, y3]]); all.push([x1, y1], [x2, y2]); cur = [x3, y3]; anchors.push(cur); all.push(cur); },
     closePath() {},
   });
   if (!all.length) return null;
@@ -114,7 +114,12 @@ function inspectPath(pth, ctm) {
   const tol = Math.max(1, 0.01 * Math.min(w, h)); const near = (v, t) => Math.abs(v - t) <= tol;
   const onCorners = poly.every(([x, y]) => (near(x, bounds[0]) || near(x, bounds[2])) && (near(y, bounds[1]) || near(y, bounds[3])));
   if (curves === 0 && lines <= 5 && ratio > 0.9 && onCorners) out.kind = 'rect';
-  else if (curves > 0 && curves <= 8 && lines <= 8 && ratio > 0.62) { out.kind = 'rect'; const span = hlines.length ? Math.max(...hlines) * sc : 0; out.radius = Math.min(span ? Math.max(0, (w - span) / 2) : Math.min(w, h) / 2, Math.min(w, h) / 2); }
+  // A rounded rectangle only curves at its corners: every curve is short (at most half the short side) and its ends sit on
+  // the bounding box. A panel with one long sweeping side also fills most of its box, but drawing it as a CSS rectangle
+  // would square that side off and cover what the curve leaves visible.
+  const half = Math.min(w, h) / 2 * 1.08 + tol; const onBox = ([px, py]) => near(px, bounds[0]) || near(px, bounds[2]) || near(py, bounds[1]) || near(py, bounds[3]);
+  const cornersOnly = arcs.every(([p, q]) => { const a = T(p), b2 = T(q); return Math.abs(a[0] - b2[0]) <= half && Math.abs(a[1] - b2[1]) <= half && onBox(a) && onBox(b2); });
+  if (out.kind) { /* already a plain rectangle */ } else if (curves > 0 && curves <= 8 && lines <= 8 && ratio > 0.62 && cornersOnly) { out.kind = 'rect'; const span = hlines.length ? Math.max(...hlines) * sc : 0; out.radius = Math.min(span ? Math.max(0, (w - span) / 2) : Math.min(w, h) / 2, Math.min(w, h) / 2); }
   else if (curves === 4 && lines <= 4 && ratio > 0.4 && ratio <= 0.62) { out.kind = 'ellipse'; out.radius = Math.min(w, h) / 2; }
   return out;
 }

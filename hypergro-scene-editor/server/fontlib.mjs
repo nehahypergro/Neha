@@ -16,6 +16,28 @@ const tables = (b) => {
 };
 
 /** Names, weight and coverage read from a TrueType/OpenType file. */
+/** The letters a TrueType file can really draw: code points whose glyph has an outline (plus the space). Fonts pulled out
+ *  of a designer's file keep the full character map but only the outlines that file used; everything else is blank. The
+ *  result is a CSS unicode-range, so the browser uses the partial font for exactly those letters and another font for the rest. */
+export function drawableRange(b) {
+  const t = tables(b); if (!t.cmap || !t.loca || !t.head || !t.maxp) return null;
+  const long = u16(b, t.head.offset + 50) === 1, n = u16(b, t.maxp.offset + 4); const lo = t.loca.offset;
+  const has = (g) => { if (g <= 0 || g >= n) return false; const a = long ? u32(b, lo + g * 4) : u16(b, lo + g * 2) * 2, z = long ? u32(b, lo + (g + 1) * 4) : u16(b, lo + (g + 1) * 2) * 2; return z > a; };
+  const cps = new Set(); const base = t.cmap.offset, subs = u16(b, base + 2);
+  for (let i = 0; i < subs; i++) {
+    const sub = base + u32(b, base + 4 + i * 8 + 4); const fmt = u16(b, sub);
+    if (fmt === 4) { const segs = u16(b, sub + 6) / 2; const ends = sub + 14, starts = ends + segs * 2 + 2, deltas = starts + segs * 2, offs = deltas + segs * 2;
+      for (let k = 0; k < segs; k++) { const a = u16(b, starts + k * 2), z = u16(b, ends + k * 2), d = u16(b, deltas + k * 2), ro = u16(b, offs + k * 2); if (a === 0xFFFF) continue;
+        for (let c = a; c <= z && c < 0xFFFF; c++) { let g; if (ro === 0) g = (c + d) & 0xFFFF; else { const at = offs + k * 2 + ro + (c - a) * 2; if (at + 2 > b.length) break; g = u16(b, at); if (g) g = (g + d) & 0xFFFF; } if (has(g) || (c === 0x20 && g > 0)) cps.add(c); } } }
+    else if (fmt === 12) { const groups = u32(b, sub + 12); for (let g = 0; g < groups; g++) { const r = sub + 16 + g * 12; const a = u32(b, r), z = u32(b, r + 4), g0 = u32(b, r + 8); for (let c = a; c <= z && c - a < 70000; c++) if (has(g0 + (c - a)) || c === 0x20) cps.add(c); } }
+    else if (fmt === 0) { for (let c = 0; c < 256; c++) { const g = b[sub + 6 + c]; if (has(g) || (c === 0x20 && g > 0)) cps.add(c); } }
+    else if (fmt === 6) { const first = u16(b, sub + 6), cnt = u16(b, sub + 8); for (let k = 0; k < cnt; k++) { const g = u16(b, sub + 10 + k * 2); if (has(g)) cps.add(first + k); } }
+  }
+  if (!cps.size) return null; const list = [...cps].sort((x, y) => x - y); const parts = []; let a = list[0], z = list[0];
+  for (const c of list.slice(1)) { if (c === z + 1) z = c; else { parts.push([a, z]); a = z = c; } } parts.push([a, z]);
+  return { count: list.length, css: parts.map(([x, y]) => (x === y ? `U+${x.toString(16)}` : `U+${x.toString(16)}-${y.toString(16)}`)).join(',') };
+}
+
 export function parseFont(b) {
   const t = tables(b); const out = { family: null, subfamily: 'Regular', fullName: null, postScriptName: null, weight: 400, italic: false, scripts: [], glyphs: 0 };
   if (t.name) {
@@ -98,7 +120,7 @@ export class FontLibrary {
     if (stamp === this.stamp) return this.index;
     const index = [];
     for (const { d, f: file, subset } of entries) {
-      try { const b = await readFile(path.join(d, file)); const p = parseFont(b); if (!p.family) continue; if (subset) tidyNames(p); index.push({ file, dir: d, subset, size: b.length, ...p, style: STYLE_WORDS(p.weight, p.italic) }); }
+      try { const b = await readFile(path.join(d, file)); const p = parseFont(b); if (!p.family) continue; if (subset) tidyNames(p); const dr = subset ? drawableRange(b) : null; index.push({ file, dir: d, subset, size: b.length, ...p, ...(dr ? { unicodeRange: dr.css, letters: dr.count } : {}), style: STYLE_WORDS(p.weight, p.italic) }); }
       catch (e) { index.push({ file, dir: d, subset, error: e.message }); }
     }
     this.index = index; this.stamp = stamp; return index;

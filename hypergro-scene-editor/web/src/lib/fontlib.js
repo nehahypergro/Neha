@@ -1,21 +1,24 @@
 // The team's font library (fonts uploaded to the server). Each face becomes an @font-face rule under its family name,
 // and also under its PostScript and full names so that creatives ingested before the font arrived still match.
-let fonts = []; const families = new Set(); let styleEl = null;
+let fonts = []; const families = new Set(), fullFamilies = new Set(); let styleEl = null;
 
 export const libraryFonts = () => fonts;
 export const libraryHas = (family) => !!family && families.has(family.toLowerCase());
+/** True only when a complete font file is on file. A partial font (pulled out of a designer's file) has just that file's letters. */
+export const libraryHasFull = (family) => !!family && fullFamilies.has(family.toLowerCase());
 export const legacyFont = (family) => (family ? fonts.find((f) => !f.error && f.legacy && [f.family, f.fullName, f.postScriptName].some((n) => n && n.toLowerCase() === family.toLowerCase())) || null : null);
 
 export async function loadFontLibrary() {
   try { fonts = await (await fetch('/api/fontlib')).json(); } catch { fonts = []; }
-  families.clear();
+  families.clear(); fullFamilies.clear();
   const rules = [];
   for (const f of fonts) {
     if (f.error) continue;
     const names = [...new Set([f.family, f.fullName, f.postScriptName].filter(Boolean))];
     for (const name of names) {
-      families.add(name.toLowerCase());
-      rules.push(`@font-face{font-family:"${name.replace(/"/g, '')}";src:url("/api/fontlib/file/${encodeURIComponent(f.file)}");font-weight:${f.weight || 400};font-style:${f.italic ? 'italic' : 'normal'};font-display:block}`);
+      families.add(name.toLowerCase()); if (!f.subset) fullFamilies.add(name.toLowerCase());
+      // A partial font only answers for the letters it really has; the browser takes every other letter from the full family (or the fallback).
+      rules.push(`@font-face{font-family:"${name.replace(/"/g, '')}";src:url("/api/fontlib/file/${encodeURIComponent(f.file)}");font-weight:${f.weight || 400};font-style:${f.italic ? 'italic' : 'normal'};font-display:block${f.subset && f.unicodeRange ? `;unicode-range:${f.unicodeRange}` : ''}}`);
     }
   }
   if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'hg-fontlib'; document.head.appendChild(styleEl); }

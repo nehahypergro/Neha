@@ -113,6 +113,7 @@ export function buildSvg(scene, assets, collected, registered = null) {
 
 const b64 = (buf) => { let s = ''; const bytes = new Uint8Array(buf); for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
 /** Register the TTFs the scene's text needs so svg2pdf can embed them. Missing fonts fall back to Helvetica. */
+const partialUsed = new Set(); // families where the PDF really had to embed a partial file (no complete font anywhere)
 async function registerFonts(doc, scene) {
   const need = new Map();
   const styled = (e) => { const out = [e.text]; for (const r of e.text.runs || []) if (r.bold || r.italic) out.push(segText(e.text, r)); return out; };
@@ -121,11 +122,11 @@ async function registerFonts(doc, scene) {
     if (scriptFontsFor(e.text.content).length) continue; // Indic/Arabic lines go into the PDF as images (see rasteriseScriptText)
     need.set(`${fam}|${weight}|${italic ? 1 : 0}`, { fam, weight, italic, ps: fam === tx.fontFamily ? tx.postScriptName || '' : '', alias: pdfAlias(fam, weight), style: italic ? (weight === 700 ? 'bolditalic' : 'italic') : weight === 700 ? 'bold' : 'normal' });
   }
-  const embedded = [], registered = new Set();
+  const embedded = [], registered = new Set(); partialUsed.clear();
   for (const f of need.values()) {
     try {
       const r = await fetch(`/api/fonts/${encodeURIComponent(f.fam)}/${f.weight}?italic=${f.italic ? 1 : 0}&ps=${encodeURIComponent(f.ps)}`); if (!r.ok) continue;
-      const name = `${f.alias.replace(/\s+/g, '')}-${f.weight}${f.italic ? 'i' : ''}.ttf`; doc.addFileToVFS(name, b64(await r.arrayBuffer())); doc.addFont(name, f.alias, f.style); registered.add(f.alias); embedded.push(`${f.fam} ${f.weight}${f.italic ? ' italic' : ''}`);
+      const name = `${f.alias.replace(/\s+/g, '')}-${f.weight}${f.italic ? 'i' : ''}.ttf`; doc.addFileToVFS(name, b64(await r.arrayBuffer())); doc.addFont(name, f.alias, f.style); registered.add(f.alias); if (r.headers.get('X-Font-Partial')) partialUsed.add(f.fam); embedded.push(`${f.fam} ${f.weight}${f.italic ? ' italic' : ''}`);
     } catch {}
   }
   return { embedded, registered };
@@ -160,7 +161,7 @@ export async function exportFile(scene, assets, format, name, onPhase = () => {}
       || (c === '₹' && scene.elements.filter((e) => e.type === 'text' && e.visible && e.text.content.includes('₹')).every((e) => lib.some((f) => f.family === e.text.fontFamily && f.rupee)));
     const special = [...new Set(scene.elements.filter((e) => e.type === 'text' && e.visible).flatMap((e) => [...e.text.content].filter((c) => c.charCodeAt(0) > 0x24F && !covered(c))))];
     const pictured = scene.elements.filter((e) => e.type === 'text' && e.visible && scriptFontsFor(e.text.content).length).length;
-    const partial = [...new Set(scene.elements.filter((e) => e.type === 'text' && e.visible).map((e) => e.text.fontFamily).filter((fam) => lib.some((f) => f.subset && f.family === fam) && !lib.some((f) => !f.subset && f.family === fam)))];
+    const partial = [...partialUsed];
     const note = (fonts.length ? `embedded ${fonts.join(', ')}` : 'text set in Helvetica (brand fonts unavailable)') + (pictured ? ` · ${pictured} regional-language line${pictured > 1 ? 's are' : ' is'} placed as a sharp image, not live text` : '') + (partial.length ? ` · ${partial.join(', ')} ${partial.length > 1 ? 'are' : 'is'} a partial font from the original file: letters that were not in that file may be missing, ask the designer for the full font` : '') + (special.length ? ` · check ${special.join(' ')} in Illustrator (glyph may be missing from the embedded font)` : '');
     return { blob, filename: `${base}.${format}`, note };
   }
