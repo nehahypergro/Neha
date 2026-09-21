@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "generator": "handmade demo bundle · Federal Bank brand",
+  "source": { "file": "demo/federal-bank-kv.ai", "colorSpace": "RGB", "units": "pt", "parser": "demo" },
+  "document": {
+    "name": "federal-bank-kv", "width": 1200, "height": 628, "activeArtboard": 0,
+    "artboards": [{ "id": 0, "name": "Link ad 1200×628", "x": 0, "y": 0, "width": 1200, "height": 628, "reference": null }]
+  },
+  "fonts": [
+    { "family": "Merriweather", "style": "Bold", "postScriptName": "Merriweather-Bold" },
+    { "family": "Lato", "style": "Regular", "postScriptName": "Lato-Regular" },
+    { "family": "Lato", "style": "Bold", "postScriptName": "Lato-Bold" }
+  ],
+  "elements": [
+    { "id": "el_bg", "type": "vector", "name": "Background", "zIndex": 0, "bounds": { "x": 0, "y": 0, "width": 1200, "height": 628 }, "fill": "#004CBE", "renderMode": "css", "role": "background", "meta": { "kind": "rect" } },
+    { "id": "el_wave", "type": "image", "name": "Fortuna Wave watermark", "zIndex": 1, "bounds": { "x": 700, "y": -60, "width": 620, "height": 547 }, "assetSvg": "assets/insignia.svg", "opacity": 0.12, "role": "decoration", "meta": { "brand": "federal-bank", "logo": "insignia-white" } },
+    { "id": "el_logo", "type": "image", "name": "Federal Bank wordmark", "zIndex": 2, "bounds": { "x": 64, "y": 48, "width": 226, "height": 40 }, "assetSvg": "assets/wordmark.svg", "role": "logo", "meta": { "brand": "federal-bank", "logo": "wordmark-reversed" } },
+    { "id": "el_head", "type": "text", "name": "Headline", "zIndex": 4, "bounds": { "x": 64, "y": 150, "width": 680, "height": 150 }, "fill": "#FFFFFF", "text": { "content": "Get 5% cashback\non every UPI payment", "fontFamily": "Merriweather", "fontStyle": "Bold", "postScriptName": "Merriweather-Bold", "fontSize": 54, "lineHeight": 68, "letterSpacing": 0, "align": "left", "kind": "point" }, "role": "headline" },
+    { "id": "el_sub", "type": "text", "name": "Subhead", "zIndex": 5, "bounds": { "x": 64, "y": 312, "width": 600, "height": 32 }, "fill": "#E1EEF9", "text": { "content": "Zero fees. Instant credit. Every festive purchase.", "fontFamily": "Lato", "fontStyle": "Regular", "postScriptName": "Lato-Regular", "fontSize": 22, "lineHeight": null, "letterSpacing": 0, "align": "left", "kind": "point" }, "role": "subhead" },
+    { "id": "el_offer", "type": "text", "name": "Offer", "zIndex": 6, "bounds": { "x": 64, "y": 364, "width": 460, "height": 40 }, "fill": "#FF9C00", "text": { "content": "Up to ₹500 every month", "fontFamily": "Lato", "fontStyle": "Bold", "postScriptName": "Lato-Bold", "fontSize": 28, "lineHeight": null, "letterSpacing": 0, "align": "left", "kind": "point" }, "role": "offer" },
+    { "id": "el_cta", "type": "vector", "name": "CTA button", "zIndex": 7, "bounds": { "x": 64, "y": 450, "width": 232, "height": 60 }, "fill": "#FF9C00", "renderMode": "css", "role": "cta", "semanticGroup": "sg_cta", "meta": { "kind": "rect", "cornerRadius": 30 } },
+    { "id": "el_cta_t", "type": "text", "name": "CTA label", "zIndex": 8, "bounds": { "x": 64, "y": 466, "width": 232, "height": 28 }, "fill": "#00265F", "text": { "content": "Apply now", "fontFamily": "Lato", "fontStyle": "Bold", "postScriptName": "Lato-Bold", "fontSize": 22, "lineHeight": null, "letterSpacing": 0, "align": "center", "kind": "point" }, "role": "cta", "semanticGroup": "sg_cta" },
+    { "id": "el_card", "type": "image", "name": "Product shot", "zIndex": 9, "bounds": { "x": 740, "y": 176, "width": 400, "height": 252 }, "assetSvg": "assets/card.svg", "role": "product", "meta": { "source": "demo" } },
+    { "id": "el_disc", "type": "text", "name": "Disclaimer", "zIndex": 10, "bounds": { "x": 64, "y": 580, "width": 1000, "height": 18 }, "fill": "#A9C6EA", "text": { "content": "T&C apply. Cashback is credited within 7 working days. The Federal Bank Ltd.", "fontFamily": "Lato", "fontStyle": "Regular", "postScriptName": "Lato-Regular", "fontSize": 13, "lineHeight": null, "letterSpacing": 0, "align": "left", "kind": "point" }, "role": "disclaimer" }
+  ],
+  "warnings": []
+}

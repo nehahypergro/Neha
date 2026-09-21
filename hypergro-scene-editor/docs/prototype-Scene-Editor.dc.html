@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+html,body{margin:0;height:100%;background:#f3f2ef;color:#1c1b19;font-family:'IBM Plex Sans',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#1c1b19}a:hover{color:#0b4ea2}
+*{box-sizing:border-box}
+input,button,textarea,select{font-family:inherit}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+</style>
+</helmet>
+<div onDragOver="{{ onDragOver }}" onDragLeave="{{ onDragLeave }}" onDrop="{{ onDrop }}" style="display:flex;flex-direction:column;height:100vh;min-height:480px;overflow:hidden;background:#f3f2ef;outline:{{ dropOutline }};outline-offset:-3px">
+  <div style="display:flex;align-items:center;gap:14px;padding:10px 20px;min-height:52px;border-bottom:1px solid #dedcd6;background:#fbfaf8;flex-shrink:0;flex-wrap:wrap;row-gap:8px">
+    <div style="font-weight:600;font-size:14px;letter-spacing:.01em;white-space:nowrap">Hypergro · Scene Editor</div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#6b6a66;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ fileName }}">{{ fileName }}</div>
+    <div style="flex:1"></div>
+    <a href="scene-format.md" style="font-size:12px;color:#6b6a66;text-decoration:none;white-space:nowrap">Scene format</a>
+    <a href="illustrator/Export Hypergro Scene.jsx" download="Export Hypergro Scene.jsx" style="font-size:12px;color:#0b4ea2;text-decoration:none;white-space:nowrap">Illustrator exporter ↓</a>
+    <div style="display:flex;gap:6px">
+      <label style="display:flex;align-items:center;height:32px;padding:0 12px;border:1px solid #cfcdc6;border-radius:6px;font-size:13px;cursor:pointer;background:#fff;white-space:nowrap" style-hover="border-color:#1c1b19">Open scene folder<input type="file" webkitdirectory="" multiple="" onChange="{{ onPickFolder }}" style="display:none"></label>
+      <label style="display:flex;align-items:center;height:32px;padding:0 12px;border:1px solid #cfcdc6;border-radius:6px;font-size:13px;cursor:pointer;background:#fff;white-space:nowrap" style-hover="border-color:#1c1b19">.zip<input type="file" accept=".zip,application/zip" onChange="{{ onPickZip }}" style="display:none"></label>
+    </div>
+    <div style="width:1px;height:20px;background:#dedcd6"></div>
+    <div style="display:flex;gap:6px">
+      <button onClick="{{ exportPNG }}" style="height:32px;padding:0 12px;border:1px solid #cfcdc6;border-radius:6px;background:#fff;font-size:13px;cursor:pointer" style-hover="border-color:#1c1b19">PNG</button>
+      <button onClick="{{ exportPDF }}" style="height:32px;padding:0 12px;border:1px solid #cfcdc6;border-radius:6px;background:#fff;font-size:13px;cursor:pointer" style-hover="border-color:#1c1b19">PDF</button>
+      <button onClick="{{ exportSVG }}" style="height:32px;padding:0 12px;border:1px solid #cfcdc6;border-radius:6px;background:#fff;font-size:13px;cursor:pointer" style-hover="border-color:#1c1b19">SVG</button>
+      <button onClick="{{ exportScene }}" style="height:32px;padding:0 12px;border:1px solid #cfcdc6;border-radius:6px;background:#fff;font-size:13px;cursor:pointer" style-hover="border-color:#1c1b19">scene.json</button>
+      <button onClick="{{ exportAll }}" style="height:32px;padding:0 14px;border:none;border-radius:6px;background:#1c1b19;color:#fff;font-size:13px;font-weight:500;cursor:pointer" style-hover="background:#0b4ea2">Export all sizes</button>
+    </div>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+      <div style="display:flex;align-items:center;gap:4px;padding:10px 20px;flex-shrink:0;flex-wrap:wrap;row-gap:8px">
+        <sc-for list="{{ sizes }}" as="s" hint-placeholder-count="4">
+          <button onClick="{{ s.pick }}" title="{{ s.title }}" style="height:28px;padding:0 10px;border-radius:5px;border:1px solid transparent;background:{{ s.bg }};color:{{ s.fg }};font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer">{{ s.label }}</button>
+        </sc-for>
+        <div style="width:1px;height:18px;background:#dedcd6;margin:0 6px"></div>
+        <button onClick="{{ undo }}" disabled="{{ noUndo }}" title="Undo (⌘Z)" style="height:28px;padding:0 10px;border:1px solid #cfcdc6;border-radius:6px;background:#fff;font-size:12px;cursor:pointer;opacity:{{ undoOp }}">Undo</button>
+        <button onClick="{{ redo }}" disabled="{{ noRedo }}" title="Redo (⇧⌘Z)" style="height:28px;padding:0 10px;border:1px solid #cfcdc6;border-radius:6px;background:#fff;font-size:12px;cursor:pointer;opacity:{{ redoOp }}">Redo</button>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;border:1px solid #cfcdc6;border-radius:6px;overflow:hidden;background:#fff;margin-right:10px;flex-shrink:0;white-space:nowrap">
+          <button onClick="{{ zoomOut }}" title="Zoom out" style="height:28px;width:28px;border:none;background:#fff;font-size:14px;cursor:pointer">−</button>
+          <button onClick="{{ zoomReset }}" title="Actual size" style="height:28px;min-width:52px;border:none;border-left:1px solid #dedcd6;border-right:1px solid #dedcd6;background:#fff;font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer">{{ zoomLabel }}</button>
+          <button onClick="{{ zoomIn }}" title="Zoom in" style="height:28px;width:28px;border:none;background:#fff;font-size:14px;cursor:pointer">+</button>
+          <button onClick="{{ zoomFit }}" title="Fit to screen" style="height:28px;padding:0 10px;border:none;border-left:1px solid #dedcd6;background:{{ fitBg }};color:{{ fitFg }};font-size:12px;cursor:pointer">Fit</button>
+        </div>
+        <div style="display:flex;border:1px solid #cfcdc6;border-radius:6px;overflow:hidden;background:#fff;flex-shrink:0;white-space:nowrap">
+          <button onClick="{{ modeSelect }}" style="height:28px;padding:0 12px;border:none;background:{{ selModeBg }};color:{{ selModeFg }};font-size:12px;cursor:pointer">Select</button>
+          <button onClick="{{ modeComment }}" style="height:28px;padding:0 12px;border:none;border-left:1px solid #cfcdc6;background:{{ comModeBg }};color:{{ comModeFg }};font-size:12px;cursor:pointer">Comment</button>
+        </div>
+      </div>
+
+      <div ref="{{ stageRef }}" onMouseDown="{{ onStageDown }}" style="flex:1;min-height:0;display:grid;place-items:center;overflow:auto;background-image:radial-gradient(#d9d7d0 1px,transparent 1px);background-size:16px 16px">
+        <div style="width:{{ scaledW }}px;height:{{ scaledH }}px;margin:24px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+        <div ref="{{ artRef }}" style="position:relative;width:{{ cw }}px;height:{{ ch }}px;transform:scale({{ zoom }});transform-origin:center;box-shadow:0 1px 0 #cfcdc6,0 12px 32px rgba(28,27,25,.12);background:#fff;overflow:hidden;flex-shrink:0;cursor:default">
+          <sc-for list="{{ els }}" as="e" hint-placeholder-count="0">
+            <div onMouseDown="{{ e.down }}" onMouseEnter="{{ e.enter }}" onMouseLeave="{{ e.leave }}" title="{{ e.title }}" style="position:absolute;left:{{ e.left }}px;top:{{ e.top }}px;width:{{ e.width }}px;height:{{ e.height }}px;display:{{ e.display }};align-items:{{ e.alignItems }};justify-content:{{ e.justify }};z-index:{{ e.z }};transform:rotate({{ e.rot }}deg);opacity:{{ e.opacity }};color:{{ e.color }};font-size:{{ e.fs }}px;font-weight:{{ e.weight }};font-style:{{ e.fstyle }};font-family:{{ e.font }};line-height:{{ e.lh }};letter-spacing:{{ e.ls }}px;text-align:{{ e.align }};white-space:{{ e.ws }};background-color:{{ e.bg }};background-image:{{ e.bgImg }};background-size:100% 100%;background-repeat:no-repeat;border-radius:{{ e.radius }}px;outline:{{ e.outline }};outline-offset:2px;cursor:{{ e.cursor }};user-select:none;text-wrap:pretty">{{ e.text }}</div>
+          </sc-for>
+          <sc-for list="{{ pins }}" as="p" hint-placeholder-count="0">
+            <div onMouseDown="{{ p.open }}" title="{{ p.text }}" style="position:absolute;left:{{ p.left }}px;top:{{ p.top }}px;width:26px;height:26px;margin:-26px 0 0 -4px;border-radius:13px 13px 13px 2px;background:{{ p.bg }};color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer;border:2px solid #fff;z-index:1000">{{ p.n }}</div>
+          </sc-for>
+          <sc-if value="{{ hasPopover }}" hint-placeholder-val="{{ false }}">
+            <div onMouseDown="{{ stop }}" style="position:absolute;left:{{ popLeft }}px;top:{{ popTop }}px;width:260px;background:#fff;border-radius:10px;box-shadow:0 8px 28px rgba(28,27,25,.22);padding:12px;z-index:1001;transform:scale({{ popScale }});transform-origin:top left">
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0b4ea2;margin-bottom:6px">{{ popTarget }}</div>
+              <sc-if value="{{ popIsOpen }}" hint-placeholder-val="{{ true }}">
+                <textarea value="{{ popDraft }}" onChange="{{ onPopDraft }}" onKeyDown="{{ onPopKey }}" placeholder="What should change here?" rows="2" style="width:100%;padding:8px;border:1px solid #cfcdc6;border-radius:6px;font-size:13px;resize:none;outline:none" style-focus="border-color:#0b4ea2"></textarea>
+                <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px">
+                  <button onClick="{{ popCancel }}" style="height:28px;padding:0 10px;border:none;background:transparent;color:#6b6a66;font-size:12px;cursor:pointer">Cancel</button>
+                  <button onClick="{{ popSubmit }}" style="height:28px;padding:0 12px;border:none;border-radius:6px;background:#0b4ea2;color:#fff;font-size:12px;font-weight:500;cursor:pointer">Apply</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ popIsDone }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:13px;line-height:1.4;white-space:pre-wrap">{{ popDraft }}</div>
+                <div style="font-size:12px;color:#1a7f4b;margin-top:6px">✓ {{ popReply }}</div>
+                <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px">
+                  <button onClick="{{ popDelete }}" style="height:28px;padding:0 10px;border:none;background:transparent;color:#6b6a66;font-size:12px;cursor:pointer">Remove</button>
+                  <button onClick="{{ popCancel }}" style="height:28px;padding:0 12px;border:1px solid #cfcdc6;border-radius:6px;background:#fff;font-size:12px;cursor:pointer">Close</button>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+          <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+            <div onMouseDown="{{ onResizeDown }}" style="position:absolute;left:{{ selRight }}px;top:{{ selBottom }}px;width:10px;height:10px;margin:-5px;background:#fff;border:2px solid #0b4ea2;border-radius:2px;cursor:nwse-resize;z-index:999"></div>
+          </sc-if>
+        </div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 20px;border-top:1px solid #dedcd6;background:#fbfaf8;flex-shrink:0;min-height:50px;font-size:13px;flex-wrap:wrap">
+        <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:8px;font-weight:500"><span style="width:8px;height:8px;border-radius:2px;background:#0b4ea2;display:inline-block"></span>{{ selName }}<span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#6b6a66">{{ selId }}</span></div>
+          <label style="display:flex;align-items:center;gap:6px;color:#6b6a66">Role
+            <select value="{{ selRole }}" onChange="{{ onSelRole }}" style="height:30px;padding:0 6px;border:1px solid #cfcdc6;border-radius:5px;font-size:13px;background:#fff">
+              <sc-for list="{{ roles }}" as="r" hint-placeholder-count="0"><option value="{{ r }}">{{ r }}</option></sc-for>
+            </select></label>
+          <label style="display:flex;align-items:center;gap:6px;color:#6b6a66">Anchor
+            <select value="{{ selAnchor }}" onChange="{{ onSelAnchor }}" style="height:30px;padding:0 6px;border:1px solid #cfcdc6;border-radius:5px;font-size:13px;background:#fff">
+              <sc-for list="{{ anchors }}" as="a" hint-placeholder-count="0"><option value="{{ a }}">{{ a }}</option></sc-for>
+            </select></label>
+          <sc-if value="{{ selIsText }}" hint-placeholder-val="{{ false }}">
+            <input value="{{ selText }}" onChange="{{ onSelText }}" style="flex:1;min-width:160px;height:30px;padding:0 10px;border:1px solid #cfcdc6;border-radius:5px;font-size:13px;background:#fff">
+            <label style="display:flex;align-items:center;gap:6px;color:#6b6a66">Size <input type="number" value="{{ selFs }}" onChange="{{ onSelFs }}" style="width:58px;height:30px;padding:0 8px;border:1px solid #cfcdc6;border-radius:5px;font-size:13px;background:#fff"></label>
+            <label style="display:flex;align-items:center;gap:6px;color:#6b6a66">Min <input type="number" value="{{ selMinFs }}" onChange="{{ onSelMinFs }}" title="minFontSize for adaptation" style="width:52px;height:30px;padding:0 8px;border:1px solid #cfcdc6;border-radius:5px;font-size:13px;background:#fff"></label>
+          </sc-if>
+          <sc-if value="{{ selHasColor }}" hint-placeholder-val="{{ false }}">
+            <label style="display:flex;align-items:center;gap:6px;color:#6b6a66">{{ selColorLabel }} <input type="color" value="{{ selColor }}" onChange="{{ onSelColor }}" style="width:30px;height:30px;padding:0;border:1px solid #cfcdc6;border-radius:5px;background:#fff"></label>
+          </sc-if>
+          <sc-if value="{{ selIsImage }}" hint-placeholder-val="{{ false }}">
+            <label style="height:30px;padding:0 12px;border:1px solid #cfcdc6;border-radius:5px;font-size:13px;display:flex;align-items:center;cursor:pointer;background:#fff">Replace image<input type="file" accept="image/*" onChange="{{ onSelImage }}" style="display:none"></label>
+          </sc-if>
+          <div style="flex:1"></div>
+          <button onClick="{{ toggleSel }}" style="height:30px;padding:0 10px;border:1px solid #cfcdc6;border-radius:5px;background:#fff;font-size:13px;cursor:pointer">{{ selVisLabel }}</button>
+          <button onClick="{{ clearSel }}" style="height:30px;padding:0 10px;border:none;background:transparent;color:#6b6a66;font-size:13px;cursor:pointer">Done</button>
+        </sc-if>
+        <sc-if value="{{ noSel }}" hint-placeholder-val="{{ true }}">
+          <div style="color:#6b6a66">{{ hintText }}</div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div style="width:360px;flex-shrink:0;display:flex;flex-direction:column;border-left:1px solid #dedcd6;background:#fbfaf8;min-height:0">
+      <div style="display:flex;align-items:center;padding:12px 18px 8px;font-weight:600;font-size:13px">Layers<div style="flex:1"></div><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#6b6a66;font-weight:400">{{ layerCount }}</span></div>
+      <div style="max-height:36%;overflow-y:auto;padding:0 10px 10px;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid #dedcd6;flex-shrink:0">
+        <sc-for list="{{ layers }}" as="l" hint-placeholder-count="0">
+          <div onClick="{{ l.pick }}" style="display:flex;align-items:center;gap:8px;height:30px;padding:0 8px 0 {{ l.indent }}px;border-radius:5px;background:{{ l.bg }};cursor:pointer;font-size:12px;opacity:{{ l.op }}" style-hover="background:#eceae4">
+            <span style="width:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#6b6a66;text-align:center">{{ l.glyph }}</span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ l.name }}</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;padding:1px 6px;border-radius:9px;background:{{ l.roleBg }};color:{{ l.roleFg }}">{{ l.role }}</span>
+            <button onClick="{{ l.toggle }}" title="Show / hide" style="width:22px;height:22px;border:none;background:transparent;cursor:pointer;color:#6b6a66;font-size:12px;padding:0">{{ l.eye }}</button>
+          </div>
+        </sc-for>
+      </div>
+      <div style="padding:12px 18px 6px;font-weight:600;font-size:13px">Assistant</div>
+      <div ref="{{ logRef }}" style="flex:1;min-height:0;overflow-y:auto;padding:6px 18px 12px;display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ msgs }}" as="m" hint-placeholder-count="1">
+          <div style="align-self:{{ m.side }};max-width:88%;padding:9px 12px;border-radius:10px;font-size:13px;line-height:1.45;background:{{ m.bg }};color:{{ m.fg }};white-space:pre-wrap;text-wrap:pretty">{{ m.text }}</div>
+        </sc-for>
+        <sc-if value="{{ busy }}" hint-placeholder-val="{{ false }}">
+          <div style="align-self:flex-start;padding:10px 12px;border-radius:10px;background:#eceae4;display:flex;gap:4px">
+            <span style="width:5px;height:5px;border-radius:50%;background:#1c1b19;animation:blink 1.2s infinite"></span>
+            <span style="width:5px;height:5px;border-radius:50%;background:#1c1b19;animation:blink 1.2s .2s infinite"></span>
+            <span style="width:5px;height:5px;border-radius:50%;background:#1c1b19;animation:blink 1.2s .4s infinite"></span>
+          </div>
+        </sc-if>
+      </div>
+      <div style="padding:8px 18px 0;display:flex;flex-wrap:wrap;gap:6px">
+        <sc-for list="{{ chips }}" as="c" hint-placeholder-count="3">
+          <button onClick="{{ c.go }}" style="height:26px;padding:0 10px;border:1px solid #dedcd6;border-radius:13px;background:#fff;font-size:12px;color:#3d3c39;cursor:pointer;white-space:nowrap" style-hover="border-color:#1c1b19">{{ c.label }}</button>
+        </sc-for>
+      </div>
+      <div style="padding:12px 18px 16px">
+        <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#0b4ea2;margin-bottom:6px">editing: {{ selName }}</div>
+        </sc-if>
+        <div style="display:flex;gap:6px">
+          <input value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onKey }}" placeholder="{{ placeholder }}" style="flex:1;height:38px;padding:0 12px;border:1px solid #cfcdc6;border-radius:8px;font-size:13px;background:#fff;outline:none" style-focus="border-color:#0b4ea2">
+          <button onClick="{{ send }}" style="height:38px;padding:0 14px;border:none;border-radius:8px;background:#0b4ea2;color:#fff;font-size:13px;font-weight:500;cursor:pointer">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const STD_SIZES=[[1200,628],[1080,1080],[1080,1920],[300,250]];
+const ROLE_COLORS={background:'#6b6a66',logo:'#0b4ea2',headline:'#1c1b19',subhead:'#3d3c39',offer:'#8a4b00',cta:'#e8541e',product:'#1a7f4b',disclaimer:'#6b6a66',body:'#3d3c39',image:'#1a7f4b',shape:'#6b6a66',decoration:'#6b6a66'};
+const hex=c=>{ if(!c) return '#000000'; if(c[0]==='#') return c.length===4?'#'+[...c.slice(1)].map(x=>x+x).join(''):c.slice(0,7); const m=c.match(/\d+/g); return m?'#'+m.slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join(''):'#000000'; };
+const weightOf=s=>{ s=(s||'').toLowerCase(); if(/thin|hairline/.test(s)) return 100; if(/extralight|ultralight/.test(s)) return 200; if(/light/.test(s)) return 300; if(/medium/.test(s)) return 500; if(/semibold|demibold/.test(s)) return 600; if(/extrabold|ultrabold/.test(s)) return 800; if(/black|heavy/.test(s)) return 900; if(/bold/.test(s)) return 700; return 400; };
+const toDataUrl=async url=>{ if(!url||url.startsWith('data:')) return url; const b=await (await fetch(url)).blob(); return new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(b); }); };
+const key=(w,h)=>w+'x'+h;
+
+class Component extends DCLogic {
+  state={ base:null, scenes:{}, sizeKey:'820x320', sizes:[[820,320]], assets:{}, fileName:'', sel:null, hover:null, zoom:1, zoomMode:'fit', undo:[], redo:[], mode:'select', pins:[], activePin:null, popDraft:'', draft:'', busy:false, dropping:false,
+    msgs:[{role:'a',text:'Open a scene bundle exported from Illustrator (folder or .zip), or drop one here. Click any element to edit it, or tell me what to change.'}] };
+  stageRef=React.createRef(); artRef=React.createRef(); logRef=React.createRef(); drag=null; fontsTried=new Set();
+
+  async componentDidMount(){ this.S=await import('./scene.js'); this.ro=new ResizeObserver(()=>this.fit()); this.fit(); window.addEventListener('load',()=>this.fit());
+    window.addEventListener('resize',this.fit); window.addEventListener('mousemove',this.onMove); window.addEventListener('mouseup',this.onUp); window.addEventListener('keydown',this.onKeyGlobal);
+    try{ const raw=await (await fetch('samples/demo/scene.json')).json(); const assets={}; for(const a of raw.assets||[]) assets[a.path]='samples/demo/'+a.path; this.openScene(raw,assets,'demo · federal-bank-kv-scene',true); }catch(e){} }
+  componentWillUnmount(){ this.ro?.disconnect(); window.removeEventListener('resize',this.fit); window.removeEventListener('mousemove',this.onMove); window.removeEventListener('mouseup',this.onUp); window.removeEventListener('keydown',this.onKeyGlobal); }
+  componentDidUpdate(_,ps){ if(!ps) return; if(ps.sizeKey!==this.state.sizeKey) this.fit(); if(ps.msgs!==this.state.msgs&&this.logRef.current) this.logRef.current.scrollTop=1e9; }
+  scene(){ return this.state.scenes[this.state.sizeKey]; }
+  size(){ return this.state.sizeKey.split('x').map(Number); }
+  fit=(tries=0)=>{ if(this.state.zoomMode!=='fit') return; const st=this.stageRef.current;
+    if(!st||st.clientWidth<100||st.clientHeight<100){ if(tries<40) requestAnimationFrame(()=>this.fit(tries+1)); return; }
+    if(this.ro&&!this.observed){ this.observed=true; this.ro.observe(st); }
+    const [w,h]=this.size(); const z=Math.max(.1,Math.min((st.clientWidth-48)/w,(st.clientHeight-48)/h,1.6));
+    this.setState(s=>Math.abs(z-s.zoom)>.001?{zoom:z}:null); };
+  setZoom(z){ this.setState({zoom:Math.min(4,Math.max(.1,z)),zoomMode:'manual'}); }
+  say(role,text){ this.setState(s=>({msgs:[...s.msgs,{role,text}]})); }
+
+  // ---- ingest scene bundle
+  openScene(raw,assets,name,quiet){ const S=this.S; const scene=S.understand(S.normalize(raw)); const W=scene.document.width,H=scene.document.height; const k=key(W,H);
+    const sizes=[[W,H],...STD_SIZES.filter(s=>key(s[0],s[1])!==k)];
+    this.setState({base:scene,scenes:{[k]:scene},sizeKey:k,sizes,assets,fileName:name,sel:null,pins:[],undo:[],redo:[],zoomMode:'fit'},()=>{ this.fit(); requestAnimationFrame(()=>this.fit()); });
+    this.loadFonts(scene);
+    const roles={}; scene.elements.filter(e=>e.type!=='group').forEach(e=>roles[e.role]=(roles[e.role]||0)+1);
+    const missing=scene.elements.filter(e=>e.type!=='group'&&e.asset&&!assets[e.asset]).length;
+    if(!quiet) this.say('a',`Opened ${scene.document.name} (${W}×${H}): ${scene.elements.filter(e=>e.type!=='group').length} elements. Detected ${Object.entries(roles).map(([r,n])=>n>1?`${n} ${r}`:r).join(', ')}.${missing?` ${missing} asset${missing===1?'':'s'} missing from the bundle — shown as placeholders.`:''}${scene.warnings?.length?` ${scene.warnings.length} exporter warnings.`:''}`);
+    else this.say('a',`Showing the demo scene (${W}×${H}). Detected roles: ${Object.keys(roles).join(', ')}. Export your own .ai with the Illustrator script (link above) and open the folder here.`); }
+  async loadFonts(scene){ const fams=[...new Set(scene.elements.filter(e=>e.text?.fontFamily).map(e=>e.text.fontFamily))];
+    for(const f of fams){ if(this.fontsTried.has(f)) continue; this.fontsTried.add(f); const fam=encodeURIComponent(f).replace(/%20/g,'+');
+      for(const q of [`${fam}:ital,wght@0,100..900;1,100..900`,`${fam}:wght@300;400;500;600;700`,fam]){ try{ const r=await fetch(`https://fonts.googleapis.com/css2?family=${q}&display=swap`); if(r.ok){ const st=document.createElement('style'); st.textContent=await r.text(); document.head.appendChild(st); break; } }catch(e){ break; } } } }
+  async loadFiles(files,label){ const byPath={}; files.forEach(f=>{ const parts=(f.webkitRelativePath||f.name).split('/'); byPath[parts.length>1?parts.slice(1).join('/'):parts[0]]=f; });
+    const sj=Object.keys(byPath).find(k=>/(^|\/)scene\.json$/.test(k)); if(!sj) throw new Error('No scene.json in that folder');
+    const dir=sj.replace(/scene\.json$/,''); const raw=JSON.parse(await byPath[sj].text()); const assets={};
+    Object.keys(byPath).forEach(k=>{ if(k.startsWith(dir)&&k!==sj) assets[k.slice(dir.length)]=URL.createObjectURL(byPath[k]); });
+    this.openScene(raw,assets,label||sj); }
+  async loadZip(file){ const zip=await window.JSZip.loadAsync(file); const files=[]; for(const [p,f] of Object.entries(zip.files)){ if(f.dir) continue; const blob=await f.async('blob'); const fo=new File([blob],p.split('/').pop()); Object.defineProperty(fo,'webkitRelativePath',{value:'zip/'+p}); files.push(fo); } await this.loadFiles(files,file.name); }
+  onPickFolder=async ev=>{ const files=[...ev.target.files]; ev.target.value=''; try{ await this.loadFiles(files); }catch(e){ this.say('a',e.message); } };
+  onPickZip=async ev=>{ const f=ev.target.files[0]; ev.target.value=''; if(!f) return; try{ await this.loadZip(f); }catch(e){ this.say('a','Could not read that zip: '+e.message); } };
+  onDrop=async ev=>{ ev.preventDefault(); this.setState({dropping:false}); const items=[...ev.dataTransfer.items||[]]; const files=[];
+    const readEntry=(entry,prefix)=>new Promise(res=>{ if(entry.isFile) entry.file(f=>{ Object.defineProperty(f,'webkitRelativePath',{value:prefix+f.name}); files.push(f); res(); }); else { const rd=entry.createReader(); const all=[]; const next=()=>rd.readEntries(async ents=>{ if(!ents.length){ for(const e of all) await readEntry(e,prefix+entry.name+'/'); res(); } else { all.push(...ents); next(); } }); next(); } });
+    try{ for(const it of items){ const en=it.webkitGetAsEntry?.(); if(en) await readEntry(en,'root/'); } if(!files.length) files.push(...ev.dataTransfer.files);
+      if(files.length===1&&/\.zip$/i.test(files[0].name)) return await this.loadZip(files[0]);
+      if(files.length===1&&/\.ai$/i.test(files[0].name)) return this.say('a','This editor reads scene bundles, not raw .ai files. Run "Export Hypergro Scene.jsx" in Illustrator on that file, then drop the exported folder here. (The legacy browser-side converter is still in Banner Editor.)');
+      await this.loadFiles(files); }catch(e){ this.say('a',e.message); } };
+
+  // ---- history + ops (single mutation path)
+  snapshot(){ this.setState(s=>({undo:[...s.undo.slice(-49),s.scenes],redo:[]})); }
+  undoIt=()=>this.setState(s=>{ const p=s.undo[s.undo.length-1]; if(!p) return null; return {undo:s.undo.slice(0,-1),redo:[...s.redo,s.scenes],scenes:p}; });
+  redoIt=()=>this.setState(s=>{ const n=s.redo[s.redo.length-1]; if(!n) return null; return {redo:s.redo.slice(0,-1),undo:[...s.undo,s.scenes],scenes:n}; });
+  ops(ops,record=true){ if(record) this.snapshot(); this.setState(s=>({scenes:{...s.scenes,[s.sizeKey]:this.S.applyOps(s.scenes[s.sizeKey],ops)}})); }
+  set(id,patch,record=true){ this.ops([{id,set:patch}],record); }
+  pickSize(w,h){ const k=key(w,h); this.setState(s=>({sizeKey:k,sel:null,zoomMode:'fit',scenes:s.scenes[k]?s.scenes:{...s.scenes,[k]:this.S.adapt(s.base,w,h)}}),this.fit); }
+
+  // ---- direct manipulation
+  placePin(e,id){ e.stopPropagation(); e.preventDefault(); const r=this.artRef.current.getBoundingClientRect(); const fx=(e.clientX-r.left)/r.width, fy=(e.clientY-r.top)/r.height;
+    const pin={id:'p'+Date.now(),elId:id,fx,fy,text:'',reply:'',status:'open'}; this.setState(s=>({pins:[...s.pins,pin],activePin:pin.id,popDraft:'',sel:id})); }
+  async submitPin(){ const {activePin,popDraft,pins}=this.state; const pin=pins.find(p=>p.id===activePin); if(!pin||!popDraft.trim()) return; const el=this.scene()?.elements.find(e=>e.id===pin.elId);
+    this.setState(s=>({pins:s.pins.map(p=>p.id===pin.id?{...p,text:popDraft.trim(),status:'busy'}:p),activePin:null,sel:pin.elId}));
+    const reply=await this.runChat(popDraft.trim(),el?`[Comment pinned on "${el.name}"] `:'');
+    this.setState(s=>({pins:s.pins.map(p=>p.id===pin.id?{...p,status:'done',reply}:p)})); }
+  startDrag(e,id,mode){ if(this.state.mode==='comment'&&mode==='move') return this.placePin(e,id); e.stopPropagation(); e.preventDefault(); const sc=this.scene(); const el=sc.elements.find(x=>x.id===id); if(!el||el.locked){ this.setState({sel:id}); return; }
+    this.snapshot(); const group=mode==='move'&&el.semanticGroup&&!e.altKey?sc.elements.filter(x=>x.semanticGroup===el.semanticGroup):[el];
+    this.drag={id,mode,sx:e.clientX,sy:e.clientY,items:group.map(x=>({id:x.id,...x.bounds})),w:el.bounds.width,h:el.bounds.height,fs:el.text?.fontSize}; this.setState({sel:id}); }
+  onMove=e=>{ const d=this.drag; if(!d) return; const dx=(e.clientX-d.sx)/this.state.zoom, dy=(e.clientY-d.sy)/this.state.zoom;
+    if(d.mode==='move') this.ops(d.items.map(it=>({id:it.id,set:{bounds:{x:it.x+dx,y:it.y+dy}}})),false);
+    else { const w=Math.max(4,d.w+dx),h=Math.max(4,d.h+dy); const set={bounds:{width:w,height:h}}; if(d.fs&&e.shiftKey) set.text={fontSize:d.fs*w/d.w}; this.ops([{id:d.id,set}],false); } };
+  onUp=()=>{ this.drag=null; };
+  onKeyGlobal=e=>{ const tag=e.target?.tagName; const typing=tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'; if(e.key==='Escape') this.setState({sel:null,activePin:null});
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!typing){ e.preventDefault(); e.shiftKey?this.redoIt():this.undoIt(); }
+    if((e.metaKey||e.ctrlKey)&&(e.key==='='||e.key==='+')){ e.preventDefault(); this.setZoom(this.state.zoom*1.25); }
+    if((e.metaKey||e.ctrlKey)&&e.key==='-'){ e.preventDefault(); this.setZoom(this.state.zoom/1.25); }
+    if((e.metaKey||e.ctrlKey)&&e.key==='0'){ e.preventDefault(); this.setState({zoomMode:'fit'},this.fit); }
+    if(!typing&&this.state.sel&&/^Arrow/.test(e.key)){ e.preventDefault(); const st=e.shiftKey?10:1; const el=this.scene().elements.find(x=>x.id===this.state.sel); if(!el) return; const dx=e.key==='ArrowLeft'?-st:e.key==='ArrowRight'?st:0, dy=e.key==='ArrowUp'?-st:e.key==='ArrowDown'?st:0; this.set(el.id,{bounds:{x:el.bounds.x+dx,y:el.bounds.y+dy}}); } };
+
+  // ---- chat
+  async runChat(text,prefix=''){ const {sel}=this.state; const sc=this.scene(); if(!sc){ this.say('a','Open a scene first.'); return ''; } this.say('u',prefix+text); this.setState({busy:true,draft:''}); let out='';
+    const ctx=JSON.stringify({canvas:{width:sc.document.width,height:sc.document.height},selected:sel,elements:this.S.summarize(sc)});
+    // Same operations layer as mcp/editor-server.mjs: TOOLS + runTool from scene.js
+    let snapped=false; const tools=this.S.TOOLS.filter(t=>t.name!=='adapt_to_size').map(t=>({...t,run:async inp=>{ if(!snapped){ this.snapshot(); snapped=true; } let result=''; this.setState(s=>{ const out=this.S.runTool(s.scenes[s.sizeKey],t.name,inp); result=out.result; return {scenes:{...s.scenes,[s.sizeKey]:out.scene}}; }); await new Promise(r=>setTimeout(r,0)); return result||'ok'; }}));
+    try{ if(!window.claude?.complete) throw new Error('offline');
+      const reply=await window.claude.complete({model:'claude-sonnet-4-5',max_tokens:800,system:`You edit a marketing creative with the provided tools. Scene: ${ctx}. "target" accepts an element id or a role (headline, subhead, cta, logo, offer, disclaimer, product, background). If an element is selected, edits refer to it unless the user names another. Keep changes minimal and on-brand. After applying, reply in one short sentence saying what changed. If unclear, ask one question instead.`,messages:[{role:'user',content:text}],tools});
+      out=reply||'Done.'; }
+    catch(err){ out=this.localEdit(text); }
+    this.say('a',out); this.setState({busy:false}); return out; }
+  // Offline fallback: parse intent into the same tool calls
+  localEdit(text){ const t=text.toLowerCase(); const sc=this.scene();
+    const role=['headline','subhead','cta','logo','offer','disclaimer','background','product'].find(r=>t.includes(r)||(r==='cta'&&t.includes('button')));
+    const target=role||this.state.sel||'headline'; const el=this.S.resolve(sc,target)[0]; if(!el) return 'Select an element first.';
+    const colors={red:'#c8102e',blue:'#0b4ea2',green:'#1a7f4b',black:'#1c1b19',white:'#ffffff',orange:'#e8541e',navy:'#0a2a5c'}; const c=Object.keys(colors).find(k=>t.includes(k));
+    const call=(name,args)=>{ this.snapshot(); let r=''; this.setState(s=>{ const out=this.S.runTool(s.scenes[s.sizeKey],name,args); r=out.result; return {scenes:{...s.scenes,[s.sizeKey]:out.scene}}; }); return r; };
+    if(t.includes('hide')) return call('set_visibility',{target,visible:false}); if(t.includes('show')) return call('set_visibility',{target,visible:true});
+    if(el.text&&/bigger|larger/.test(t)) return call('set_text',{target:el.id,fontSize:el.text.fontSize*1.2}); if(el.text&&t.includes('smaller')) return call('set_text',{target:el.id,fontSize:el.text.fontSize/1.2});
+    if(c) return call('set_fill',{target,color:colors[c]});
+    const q=text.match(/["“](.+?)["”]/); if(q&&el.text) return call('set_text',{target:el.id,content:q[1]});
+    return 'Offline mode: try "make the CTA blue", "headline bigger", "hide the disclaimer", or put new copy in quotes.'; }
+
+  // ---- export (renders from the scene, not the DOM)
+  assetUrl(e){ const a=this.state.assets; return (e.assetSvg&&a[e.assetSvg])||(e.asset&&a[e.asset])||null; }
+  async resolveImgs(){ this.imgData=this.imgData||{}; for(const e of this.scene().elements){ const u=this.assetUrl(e); if(u&&!u.startsWith('data:')&&!this.imgData[u]) this.imgData[u]=await toDataUrl(u); } }
+  toSvg(){ const sc=this.scene(); const W=sc.document.width,H=sc.document.height; const esc=s=>String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    const parts=[...sc.elements].filter(e=>e.type!=='group'&&e.visible).sort((a,b)=>a.zIndex-b.zIndex).map(e=>{ const {x,y,width:w,height:h}=e.bounds; const rot=e.transform?.rotation?` transform="rotate(${-e.transform.rotation} ${x+w/2} ${y+h/2})"`:''; const op=e.opacity!==1?` opacity="${e.opacity}"`:'';
+      if(e.type!=='text'){ const u=this.assetUrl(e); if(u&&e.renderMode!=='css') return `<image href="${(this.imgData||{})[u]||u}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"${rot}${op}/>`; return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${e.meta?.cornerRadius||0}" fill="${e.fill||'#cccccc'}"${rot}${op}/>`; }
+      const fs=e.text.fontSize, lh=e.text.lineHeight||fs*1.2; const lines=this.wrap(e.text.content,e.text.kind==='point'?1e9:w,fs,weightOf(e.text.fontStyle),e.text.fontFamily);
+      const tx=e.text.align==='center'?x+w/2:e.text.align==='right'?x+w:x; const anchor=e.text.align==='center'?'middle':e.text.align==='right'?'end':'start';
+      const cover=e.meta?.coverFill?`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${e.meta.coverFill}"${rot}/>`:'';
+      return cover+lines.map((l,i)=>`<text x="${tx}" y="${y+fs*.9+i*lh}" font-family="${esc(e.text.fontFamily||'sans-serif')}" font-size="${fs}" font-weight="${weightOf(e.text.fontStyle)}" font-style="${/italic|oblique/i.test(e.text.fontStyle)?'italic':'normal'}" letter-spacing="${e.text.letterSpacing||0}" fill="${e.fill}" text-anchor="${anchor}"${rot}${op}>${esc(l)}</text>`).join(''); });
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`; }
+  wrap(text,w,fs,weight,font){ const c=document.createElement('canvas').getContext('2d'); c.font=`${weight} ${fs}px ${font?`"${font}",`:''}sans-serif`; const out=[]; String(text).split(/\r?\n/).forEach(p=>{ let line=''; p.split(' ').forEach(word=>{ const t=line?line+' '+word:word; if(c.measureText(t).width>w&&line){out.push(line);line=word;} else line=t; }); out.push(line); }); return out; }
+  async toCanvas(scale=2){ await this.resolveImgs(); const [W,H]=this.size(); const svg=this.toSvg(); const img=new Image(); img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg); await new Promise((r,j)=>{img.onload=r;img.onerror=j;}); const c=document.createElement('canvas'); c.width=W*scale; c.height=H*scale; c.getContext('2d').drawImage(img,0,0,c.width,c.height); return c; }
+  dl(name,href){ const a=document.createElement('a'); a.href=href; a.download=name; a.click(); }
+  base(){ return (this.scene()?.document.name||'scene').replace(/\.[^.]+$/,''); }
+  exportSVG=async()=>{ await this.resolveImgs(); this.dl(`${this.base()}-${this.state.sizeKey}.svg`,'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(this.toSvg())); };
+  exportPNG=async()=>{ const c=await this.toCanvas(); this.dl(`${this.base()}-${this.state.sizeKey}.png`,c.toDataURL('image/png')); };
+  exportPDF=async()=>{ const [W,H]=this.size(); const c=await this.toCanvas(3); const {jsPDF}=window.jspdf; const pdf=new jsPDF({orientation:W>H?'l':'p',unit:'px',format:[W,H]}); pdf.addImage(c.toDataURL('image/png'),'PNG',0,0,W,H); pdf.save(`${this.base()}-${this.state.sizeKey}.pdf`); };
+  exportScene=()=>{ const sc=this.scene(); this.dl(`${this.base()}-${this.state.sizeKey}.scene.json`,'data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(sc,null,2))); };
+  exportAll=async()=>{ const cur=this.state.sizeKey; for(const [W,H] of this.state.sizes){ this.pickSize(W,H); await new Promise(r=>setTimeout(r,80)); const c=await this.toCanvas(); this.dl(`${this.base()}-${key(W,H)}.png`,c.toDataURL('image/png')); await new Promise(r=>setTimeout(r,300)); } const [w,h]=cur.split('x').map(Number); this.pickSize(w,h); this.say('a',`Exported ${this.state.sizes.length} PNG sizes. Sizes other than the original were adapted from the scene's layout anchors; tweak Anchor / Min size per element if something lands wrong.`); };
+
+  renderVals(){ const s=this.state; const sc=this.scene(); const [W,H]=this.size(); const S=this.S; const sel=sc?.elements.find(e=>e.id===s.sel); const a=s.assets;
+    const leaves=sc?[...sc.elements].filter(e=>e.type!=='group').sort((x,y)=>x.zIndex-y.zIndex):[];
+    const depth=e=>{ let d=0,p=e.parentId; while(p&&d<6){ const g=sc.elements.find(x=>x.id===p); if(!g) break; d++; p=g.parentId; } return d; };
+    return {
+      fileName:s.fileName, cw:W, ch:H, zoom:s.zoom, zoomLabel:Math.round(s.zoom*100)+'%', scaledW:Math.round(W*s.zoom), scaledH:Math.round(H*s.zoom),
+      zoomIn:()=>this.setZoom(s.zoom*1.25), zoomOut:()=>this.setZoom(s.zoom/1.25), zoomReset:()=>this.setZoom(1), zoomFit:()=>this.setState({zoomMode:'fit'},this.fit),
+      fitBg:s.zoomMode==='fit'?'#1c1b19':'#fff', fitFg:s.zoomMode==='fit'?'#fff':'#3d3c39',
+      undo:this.undoIt, redo:this.redoIt, noUndo:!s.undo.length, noRedo:!s.redo.length, undoOp:s.undo.length?1:.4, redoOp:s.redo.length?1:.4,
+      sizes:s.sizes.map((sz,i)=>{ const k=key(sz[0],sz[1]); return {label:k.replace('x','×'),title:i===0?'Original artboard':'Adapted from layout anchors',bg:k===s.sizeKey?'#1c1b19':'transparent',fg:k===s.sizeKey?'#fff':'#3d3c39',pick:()=>this.pickSize(sz[0],sz[1])}; }),
+      stageRef:this.stageRef, artRef:this.artRef, logRef:this.logRef,
+      onStageDown:()=>this.setState({sel:null,activePin:null}),
+      onDragOver:ev=>{ev.preventDefault(); if(!s.dropping) this.setState({dropping:true});}, onDragLeave:()=>{ if(s.dropping) this.setState({dropping:false}); }, onDrop:this.onDrop,
+      dropOutline:s.dropping?'3px solid #0b4ea2':'none',
+      modeSelect:()=>this.setState({mode:'select',activePin:null}), modeComment:()=>this.setState({mode:'comment',sel:null}),
+      selModeBg:s.mode==='select'?'#1c1b19':'#fff', selModeFg:s.mode==='select'?'#fff':'#3d3c39', comModeBg:s.mode==='comment'?'#1c1b19':'#fff', comModeFg:s.mode==='comment'?'#fff':'#3d3c39',
+      hintText:s.mode==='comment'?'Comment mode: click anywhere on the artwork, describe the change, and it gets applied.':'Click any element to select it, drag to move (CTA label and button move together; ⌥-drag to separate). Arrow keys nudge. Or tell the assistant.',
+      pins:s.pins.map((p,i)=>({n:p.status==='done'?'✓':(i+1),left:p.fx*W,top:p.fy*H,text:p.text,bg:p.status==='done'?'#1a7f4b':(p.status==='busy'?'#6b6a66':'#e8541e'),open:ev=>{ev.stopPropagation();this.setState({activePin:p.id,popDraft:p.text,sel:p.elId});}})),
+      hasPopover:!!s.activePin, popLeft:(s.pins.find(p=>p.id===s.activePin)?.fx||0)*W+12, popTop:(s.pins.find(p=>p.id===s.activePin)?.fy||0)*H+8, popScale:1/s.zoom,
+      popTarget:'on: '+(sc?.elements.find(e=>e.id===s.pins.find(p=>p.id===s.activePin)?.elId)?.name||'artwork'),
+      popIsOpen:s.pins.find(p=>p.id===s.activePin)?.status==='open', popIsDone:s.pins.find(p=>p.id===s.activePin)?.status==='done', popDraft:s.popDraft, popReply:s.pins.find(p=>p.id===s.activePin)?.reply||'',
+      onPopDraft:ev=>this.setState({popDraft:ev.target.value}), onPopKey:ev=>{ if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();this.submitPin();} if(ev.key==='Escape') this.setState({activePin:null}); },
+      popSubmit:()=>this.submitPin(), stop:ev=>ev.stopPropagation(),
+      popCancel:()=>this.setState(st=>({activePin:null,pins:st.pins.filter(p=>!(p.id===st.activePin&&p.status==='open'&&!p.text))})),
+      popDelete:()=>this.setState(st=>({activePin:null,pins:st.pins.filter(p=>p.id!==st.activePin)})),
+      els:leaves.map(e=>{ const isT=e.type==='text'; const url=!isT&&e.renderMode!=='css'?this.assetUrl(e):null; const t=e.text||{}; const missing=!isT&&!url&&e.renderMode!=='css'&&!e.fill; const b=e.bounds;
+        return { title:`${e.name} · ${e.role||e.type}`, left:b.x, top:b.y, width:b.width, height:b.height, display:e.visible?(isT?'block':'flex'):'none', alignItems:'center', justify:'center', z:e.zIndex+1, rot:-(e.transform?.rotation||0), opacity:e.opacity??1,
+          color:isT?(e.fill||'#000'):'#6b6a66', fs:isT?t.fontSize:11, weight:isT?weightOf(t.fontStyle):400, fstyle:isT&&/italic|oblique/i.test(t.fontStyle||'')?'italic':'normal', font:isT&&t.fontFamily?`"${t.fontFamily}",sans-serif`:'inherit', lh:isT?(t.lineHeight?t.lineHeight+'px':'1.2'):'1.2', ls:isT?(t.letterSpacing||0):0, align:isT?t.align:'center', ws:isT?(t.kind==='point'?'pre':'pre-wrap'):'normal',
+          bg:isT?(e.meta?.coverFill||'transparent'):(url?'transparent':(e.fill||'#e6e4de')), bgImg:url?`url("${url}")`:'none', radius:!isT&&!url?(e.meta?.cornerRadius||0):0,
+          text:isT?t.content:(missing?e.name+' (asset missing)':''), outline:s.sel===e.id?'2px solid #0b4ea2':(s.hover===e.id?'1px dashed #0b4ea2':'none'), cursor:e.locked?'not-allowed':'move',
+          down:ev=>this.startDrag(ev,e.id,'move'), enter:()=>this.setState({hover:e.id}), leave:()=>this.setState({hover:null}) }; }),
+      layers:[...leaves].reverse().map(e=>({ name:e.name, glyph:e.type==='text'?'T':e.type==='image'?'▣':'◆', role:e.role||'', roleBg:s.sel===e.id?'#fff':'#eceae4', roleFg:ROLE_COLORS[e.role]||'#6b6a66', indent:8+depth(e)*12, bg:s.sel===e.id?'#dfe8f5':'transparent', op:e.visible?1:.45, eye:e.visible?'●':'○',
+        pick:()=>this.setState({sel:e.id}), toggle:ev=>{ ev.stopPropagation(); this.set(e.id,{visible:!e.visible}); } })),
+      layerCount:leaves.length?`${leaves.length} elements`:'', roles:S?S.ROLES:[], anchors:S?S.ANCHORS:[],
+      hasSel:!!sel, noSel:!sel, selName:sel?.name||'', selId:sel?.id||'', selIsText:sel?.type==='text', selIsImage:sel?.type==='image', selHasColor:sel&&(sel.type==='text'||sel.type==='vector'), selColorLabel:sel?.type==='text'?'Colour':'Fill',
+      selRole:sel?.role||'shape', selAnchor:sel?.layout?.anchor||'center', selText:sel?.text?.content||'', selFs:sel?.text?Math.round(sel.text.fontSize):0, selMinFs:sel?.layout?.minFontSize??0, selColor:hex(sel?.fill), selVisLabel:sel?.visible?'Hide':'Show',
+      selRight:sel?sel.bounds.x+sel.bounds.width:0, selBottom:sel?sel.bounds.y+sel.bounds.height:0,
+      onResizeDown:ev=>sel&&this.startDrag(ev,sel.id,'resize'),
+      onSelRole:ev=>this.set(sel.id,{role:ev.target.value}), onSelAnchor:ev=>this.set(sel.id,{layout:{anchor:ev.target.value}}), onSelMinFs:ev=>this.set(sel.id,{layout:{minFontSize:+ev.target.value||0}}),
+      onSelText:ev=>this.set(sel.id,{text:{content:ev.target.value}}), onSelFs:ev=>this.set(sel.id,{text:{fontSize:+ev.target.value||1}}),
+      onSelColor:ev=>this.set(sel.id,sel.type==='text'?{fill:ev.target.value}:{fill:ev.target.value,renderMode:'css'}),
+      onSelImage:ev=>{ const f=ev.target.files[0]; if(!f) return; const p='user/'+Date.now()+'-'+f.name; this.setState(st=>({assets:{...st.assets,[p]:URL.createObjectURL(f)}})); this.set(sel.id,{asset:p,assetSvg:null,renderMode:null}); ev.target.value=''; },
+      toggleSel:()=>this.set(sel.id,{visible:!sel.visible}), clearSel:()=>this.setState({sel:null}),
+      msgs:s.msgs.map(m=>({text:m.text,side:m.role==='u'?'flex-end':'flex-start',bg:m.role==='u'?'#0b4ea2':'#eceae4',fg:m.role==='u'?'#fff':'#1c1b19'})),
+      busy:s.busy, draft:s.draft, placeholder:sel?`Change the ${sel.name.toLowerCase()}…`:'Describe a change…',
+      chips:[{label:'Make the headline shorter'},{label:'Make the CTA blue'},{label:'Hide the disclaimer'}].map(c=>({label:c.label,go:()=>this.runChat(c.label)})),
+      onDraft:ev=>this.setState({draft:ev.target.value}), onKey:ev=>{ if(ev.key==='Enter'&&s.draft.trim()) this.runChat(s.draft.trim()); },
+      send:()=>{ if(s.draft.trim()) this.runChat(s.draft.trim()); },
+      onPickFolder:this.onPickFolder, onPickZip:this.onPickZip, exportPNG:this.exportPNG, exportPDF:this.exportPDF, exportSVG:this.exportSVG, exportScene:this.exportScene, exportAll:this.exportAll,
+    }; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,256 @@
+{
+  "id": "federal-bank",
+  "name": "Federal Bank",
+  "source": "Federal Brand Book (2026)",
+  "colors": {
+    "primary": [
+      {
+        "name": "Federal Blue",
+        "hex": "#004CBE",
+        "pantone": "2728 C",
+        "use": "Key brand collateral, logos, core messaging, signature visuals"
+      },
+      {
+        "name": "Golden Glow",
+        "hex": "#FF9C00",
+        "pantone": "137 C",
+        "use": "Optimism and energy; the wordmark underline and accents"
+      },
+      {
+        "name": "Midnight Blue",
+        "hex": "#00265F",
+        "pantone": "288 C",
+        "use": "Gravitas and practicality; retail environments"
+      },
+      {
+        "name": "Soft Sand",
+        "hex": "#C3BAAE",
+        "pantone": "406 C",
+        "use": "Sophistication and class"
+      },
+      {
+        "name": "Pure White",
+        "hex": "#FFFFFF",
+        "pantone": "000 C",
+        "use": "Clarity and modernity"
+      }
+    ],
+    "secondary": [
+      {
+        "name": "Blue 80",
+        "hex": "#3875CD"
+      },
+      {
+        "name": "Blue 60",
+        "hex": "#719DDC"
+      },
+      {
+        "name": "Blue 40",
+        "hex": "#A9C6EA"
+      },
+      {
+        "name": "Blue 20",
+        "hex": "#E1EEF9"
+      },
+      {
+        "name": "Gold 80",
+        "hex": "#FFB033"
+      },
+      {
+        "name": "Gold 60",
+        "hex": "#FFC466"
+      },
+      {
+        "name": "Gold 40",
+        "hex": "#FFD799"
+      },
+      {
+        "name": "Gold 20",
+        "hex": "#FFEBCC"
+      },
+      {
+        "name": "Sand 80",
+        "hex": "#D0C8BB"
+      },
+      {
+        "name": "Sand 60",
+        "hex": "#DCD5C9"
+      },
+      {
+        "name": "Sand 40",
+        "hex": "#E9E3D6"
+      },
+      {
+        "name": "Sand 20",
+        "hex": "#F5F1E3"
+      }
+    ],
+    "tertiary": [
+      {
+        "name": "Green",
+        "hex": "#9FBD7F"
+      },
+      {
+        "name": "Green light",
+        "hex": "#D0E6B7"
+      },
+      {
+        "name": "Purple",
+        "hex": "#BCA4D5"
+      },
+      {
+        "name": "Purple light",
+        "hex": "#E6D3F4"
+      },
+      {
+        "name": "Yellow",
+        "hex": "#F2D589"
+      },
+      {
+        "name": "Yellow light",
+        "hex": "#FEF2B5"
+      },
+      {
+        "name": "Pink",
+        "hex": "#EBAFAC"
+      },
+      {
+        "name": "Pink light",
+        "hex": "#FDDDD7"
+      }
+    ]
+  },
+  "fonts": {
+    "headline": {
+      "family": "Merriweather",
+      "styles": [
+        "Light",
+        "Regular",
+        "SemiBold",
+        "Bold",
+        "Black"
+      ],
+      "rule": "Headlines only",
+      "fallback": "Georgia"
+    },
+    "body": {
+      "family": "Lato",
+      "styles": [
+        "Light",
+        "Regular",
+        "Bold",
+        "Italic",
+        "Bold Italic"
+      ],
+      "rule": "Subheads and body copy",
+      "fallback": "Verdana"
+    }
+  },
+  "rules": [
+    "Merriweather is only for headlines; Lato for subheads and body copy.",
+    "Do not recreate, outline, stretch, tilt, shadow or recolour the Fortuna Wave insignia or the wordmark; use the approved assets.",
+    "Keep the wordmark's orange underline; the gap beneath the wordmark is 2/3 of the F stroke height.",
+    "Do not place the insignia inside a shape, on patterns, or on busy images."
+  ],
+  "logos": [
+    {
+      "id": "wordmark-primary",
+      "name": "Wordmark · blue",
+      "file": "wordmark-primary.svg",
+      "kind": "wordmark",
+      "on": "light",
+      "w": 1075,
+      "h": 190
+    },
+    {
+      "id": "wordmark-reversed",
+      "name": "Wordmark · white on Federal Blue",
+      "file": "wordmark-reversed.svg",
+      "kind": "wordmark",
+      "on": "dark",
+      "w": 1075,
+      "h": 190
+    },
+    {
+      "id": "wordmark-on-gold",
+      "name": "Wordmark · on Golden Glow",
+      "file": "wordmark-on-gold.svg",
+      "kind": "wordmark",
+      "on": "orange",
+      "w": 1075,
+      "h": 190
+    },
+    {
+      "id": "insignia-blue",
+      "name": "Fortuna Wave · blue",
+      "file": "insignia-blue.svg",
+      "kind": "insignia",
+      "on": "light",
+      "w": 476,
+      "h": 420
+    },
+    {
+      "id": "insignia-gold",
+      "name": "Fortuna Wave · Golden Glow (darker images)",
+      "file": "insignia-gold.svg",
+      "kind": "insignia",
+      "on": "dark",
+      "w": 476,
+      "h": 420
+    },
+    {
+      "id": "insignia-white",
+      "name": "Fortuna Wave · white",
+      "file": "insignia-white.svg",
+      "kind": "insignia",
+      "on": "dark",
+      "w": 476,
+      "h": 420
+    },
+    {
+      "id": "insignia-black",
+      "name": "Fortuna Wave · black",
+      "file": "insignia-black.svg",
+      "kind": "insignia",
+      "on": "light",
+      "w": 476,
+      "h": 420
+    },
+    {
+      "id": "lockup-horizontal",
+      "name": "Lockup · horizontal",
+      "file": "lockup-horizontal.svg",
+      "kind": "lockup",
+      "on": "light",
+      "w": 561,
+      "h": 104
+    },
+    {
+      "id": "lockup-horizontal-reversed",
+      "name": "Lockup · horizontal, white",
+      "file": "lockup-horizontal-reversed.svg",
+      "kind": "lockup",
+      "on": "dark",
+      "w": 561,
+      "h": 104
+    },
+    {
+      "id": "lockup-stacked",
+      "name": "Lockup · stacked",
+      "file": "lockup-stacked.svg",
+      "kind": "lockup",
+      "on": "light",
+      "w": 426,
+      "h": 226
+    },
+    {
+      "id": "lockup-stacked-reversed",
+      "name": "Lockup · stacked, white",
+      "file": "lockup-stacked-reversed.svg",
+      "kind": "lockup",
+      "on": "dark",
+      "w": 426,
+      "h": 226
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "name": "hypergro-scene-editor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hypergro Scene Editor: ingest Illustrator (.ai) creatives into an editable scene, edit by click or chat, adapt to every ad size, export.",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"node --watch server/index.mjs\" \"vite\"",
+    "build": "vite build",
+    "start": "NODE_ENV=production node server/index.mjs",
+    "server": "node server/index.mjs",
+    "extract": "node server/pdf-extract.mjs",
+    "ingest": "node server/ingest.mjs",
+    "worker": "node server/ingest-worker.mjs",
+    "mcp": "node server/editor-server.mjs",
+    "sample": "node scripts/make-sample-ai.mjs",
+    "check-claude": "node scripts/check-claude.mjs",
+    "vertex-models": "node scripts/list-vertex-models.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "bin": {
+    "hypergro-editor-mcp": "./server/editor-server.mjs",
+    "hypergro-ingest-worker": "./server/ingest-worker.mjs",
+    "hypergro-extract": "./server/pdf-extract.mjs",
+    "hypergro-ingest": "./server/ingest.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
+    "@anthropic-ai/vertex-sdk": "^0.19.8",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "express": "^5.2.1",
+    "jspdf": "^4.2.1",
+    "jszip": "^3.10.2",
+    "multer": "^2.4.0",
+    "mupdf": "^1.28.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "svg2pdf.js": "^2.8.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "pdf-lib": "^1.17.1",
+    "vite": "^8.3.0"
+  }
+}

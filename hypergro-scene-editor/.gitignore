@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/
+queue/
+probe/
+.env
+secrets/
+.DS_Store
+*.log
