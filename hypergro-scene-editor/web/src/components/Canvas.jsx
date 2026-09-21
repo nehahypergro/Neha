@@ -1,4 +1,5 @@
 import React from 'react';
+import { cropCss } from '../lib/edit.js';
 import { weightOf, isItalic, fontFamilyCss, lineHeightOf, assetUrl, isCssShape, coverPad } from '../lib/render.js';
 
 const HANDLES = [['nw', 0, 0], ['n', .5, 0], ['ne', 1, 0], ['e', 1, .5], ['se', 1, 1], ['s', .5, 1], ['sw', 0, 1], ['w', 0, .5]];
@@ -10,8 +11,8 @@ function elStyle(e, url) {
   const st = { left: b.x, top: b.y, width: b.width, height: b.height, zIndex: e.zIndex + 1, opacity: e.opacity ?? 1, display: e.visible ? undefined : 'none',
     transform: e.transform?.rotation ? `rotate(${-e.transform.rotation}deg)` : undefined, cursor: e.locked ? 'default' : 'move', pointerEvents: e.meta?.collapsedGroup ? 'none' : undefined };
   if (isT) Object.assign(st, { color: e.fill || '#000', fontSize: t.fontSize, fontWeight: weightOf(t.fontStyle), fontStyle: isItalic(t.fontStyle) ? 'italic' : 'normal', fontFamily: fontFamilyCss(t.fontFamily),
-    lineHeight: lineHeightOf(t) + 'px', letterSpacing: (t.letterSpacing || 0) + 'px', textAlign: t.align || 'left', whiteSpace: t.kind === 'point' ? 'pre' : 'pre-wrap', backgroundColor: e.meta?.coverFill || 'transparent', boxShadow: e.meta?.coverFill ? `0 0 0 ${coverPad(t)}px ${e.meta.coverFill}` : undefined });
-  else if (url) Object.assign(st, { backgroundImage: `url("${url}")`, transform: [st.transform, e.transform?.scaleY === -1 ? 'scaleY(-1)' : ''].filter(Boolean).join(' ') || undefined });
+    lineHeight: lineHeightOf(t) + 'px', letterSpacing: (t.letterSpacing || 0) + 'px', textAlign: t.align || 'left', textAlignLast: t.align === 'justify' ? 'left' : undefined, textDecoration: [t.underline && 'underline', t.strike && 'line-through'].filter(Boolean).join(' ') || undefined, whiteSpace: t.kind === 'point' ? 'pre' : 'pre-wrap', backgroundColor: e.meta?.coverFill || 'transparent', boxShadow: e.meta?.coverFill ? `0 0 0 ${coverPad(t)}px ${e.meta.coverFill}` : undefined });
+  else if (url) Object.assign(st, cropCss(e.meta?.crop) || {}, { backgroundImage: `url("${url}")`, transform: [st.transform, e.transform?.scaleY === -1 ? 'scaleY(-1)' : ''].filter(Boolean).join(' ') || undefined });
   else Object.assign(st, { backgroundColor: e.fill || '#e6e4de', borderRadius: e.meta?.kind === 'ellipse' ? '50%' : (e.meta?.cornerRadius || 0) + 'px' });
   return st;
 }
@@ -25,10 +26,10 @@ const startEditing = (node, content) => {
   const sl = window.getSelection(); sl.removeAllRanges(); sl.addRange(range);
 };
 
-export default function Canvas({ scene, W, H, zoom, assets, sel, hover, editing, guides, dragging, showOriginal, referenceUrl, job, stageRef, artRef, ctl }) {
+export default function Canvas({ scene, W, H, zoom, assets, sel, hover, editing, guides, userGuides = [], marquee = null, preview = false, dragging, showOriginal, referenceUrl, job, stageRef, artRef, ctl }) {
   const leaves = scene ? scene.elements.filter((e) => e.type !== 'group').sort((a, b) => a.zIndex - b.zIndex) : [];
   const primary = scene?.elements.find((e) => e.id === sel[0]);
-  const showHandles = primary && !primary.locked && sel.length === 1 && !editing;
+  const showHandles = primary && !primary.locked && sel.length === 1 && !editing && !preview;
   const b = primary?.bounds;
   // Handles sit in a wrapper that rotates with the item, so they stay on its corners.
   const hStyle = showHandles ? { left: b.x, top: b.y, width: b.width, height: b.height, transform: primary.transform?.rotation ? `rotate(${-primary.transform.rotation}deg)` : undefined } : null;
@@ -57,7 +58,10 @@ export default function Canvas({ scene, W, H, zoom, assets, sel, hover, editing,
             );
           })}
           {referenceUrl && showOriginal && <img className="overlay-img" src={referenceUrl} alt="Original" draggable={false} />}
-          {guides.map((g, i) => <div key={i} className={'guide ' + g.axis} style={g.axis === 'x' ? { left: g.pos } : { top: g.pos }} aria-hidden="true" />)}
+          {!preview && userGuides.map((g, i) => <div key={'u' + i} className={'guide user ' + g.axis} style={g.axis === 'x' ? { left: g.pos, width: Math.max(1, 1 / zoom) } : { top: g.pos, height: Math.max(1, 1 / zoom) }} title="Drag to move · drag off the creative to remove" onMouseDown={(ev) => ctl.guideDown(ev, i)}><i style={g.axis === 'x' ? { left: -4 / zoom, right: -4 / zoom } : { top: -4 / zoom, bottom: -4 / zoom }} /></div>)}
+          {marquee && <div className="marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height, borderWidth: Math.max(1, 1 / zoom) }} aria-hidden="true" />}
+          {guides.map((g, i) => <div key={i} className={'guide ' + g.axis + (g.even ? ' even' : '')} style={g.axis === 'x' ? { left: g.pos } : { top: g.pos }} aria-hidden="true" />)}
+          {!preview && sel.length > 1 && !dragging && (() => { const bs = sel.map((id) => scene?.elements.find((x) => x.id === id)?.bounds).filter(Boolean); if (bs.length < 2) return null; const x0 = Math.min(...bs.map((q) => q.x)), y0 = Math.min(...bs.map((q) => q.y)), x1 = Math.max(...bs.map((q) => q.x + q.width)), y1 = Math.max(...bs.map((q) => q.y + q.height)); return <div className="multi-box" style={{ left: x0, top: y0, width: x1 - x0, height: y1 - y0, borderWidth: Math.max(1, 1 / zoom) }} aria-hidden="true" />; })()}
           {showHandles && !dragging && (
             <div className="handles" style={hStyle} aria-hidden="true">
               {HANDLES.map(([h, fx, fy]) => <div key={h} className="handle" style={{ left: `${fx * 100}%`, top: `${fy * 100}%`, cursor: CURSOR[h], transform: `translate(-50%, -50%) scale(${1 / zoom})` }} onMouseDown={(ev) => ctl.handleDown(ev, primary.id, h)} />)}

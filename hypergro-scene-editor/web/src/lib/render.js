@@ -43,13 +43,31 @@ function shapePath(ctx, e) {
   else { const r = Math.min(e.meta?.cornerRadius || 0, w / 2, h / 2); if (r > 0) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); }
 }
 export function baselineY(t, i) { const lh = lineHeightOf(t); return i * lh + lh / 2 + t.fontSize * 0.355; }
+/** Wrapped lines with what the painters need: start x, measured width, per-word x for justified lines. */
+export function layoutText(ctx, e) {
+  const t = e.text, { x, width: w } = e.bounds; const out = [];
+  String(t.content ?? '').split(/\r?\n/).forEach((para) => { const ls = wrapLines(ctx, para, t.kind === 'point' ? Infinity : w); ls.forEach((l, i) => out.push({ text: l, last: i === ls.length - 1 })); });
+  return out.map((l, i) => { const lw = ctx.measureText(l.text).width; const left = t.align === 'center' ? x + (w - lw) / 2 : t.align === 'right' ? x + w - lw : x; const line = { i, text: l.text, x: left, width: lw, words: null };
+    if (t.align === 'justify' && !l.last && t.kind !== 'point') { const ws = l.text.split(' ').filter(Boolean); if (ws.length > 1) { const sum = ws.reduce((n, wd) => n + ctx.measureText(wd).width, 0); const gap = (w - sum) / (ws.length - 1); let at = x; line.words = ws.map((wd) => { const o = { text: wd, x: at }; at += ctx.measureText(wd).width + gap; return o; }); line.x = x; line.width = w; } }
+    return line; });
+}
+/** Underline / strikethrough bars for a line, in scene px: [{x, y, w, h}]. */
+export function decorationBars(t, line, top) {
+  const bars = []; const fs = t.fontSize, by = top + baselineY(t, line.i), th = Math.max(1, fs * 0.06);
+  if (t.underline) bars.push({ x: line.x, y: by + fs * 0.1, w: line.width, h: th });
+  if (t.strike) bars.push({ x: line.x, y: by - fs * 0.3, w: line.width, h: th });
+  return bars;
+}
 export function drawText(ctx, e) {
   const t = e.text, { x, y, width: w, height: h } = e.bounds;
   ctx.font = fontString(t); if ('letterSpacing' in ctx) ctx.letterSpacing = (t.letterSpacing || 0) + 'px';
   if (e.meta?.coverFill) { const p = coverPad(t); ctx.fillStyle = e.meta.coverFill; ctx.fillRect(x - p, y - p, w + 2 * p, h + 2 * p); }
-  ctx.fillStyle = e.fill || '#000'; ctx.textBaseline = 'alphabetic'; ctx.textAlign = t.align === 'center' ? 'center' : t.align === 'right' ? 'right' : 'left';
-  const tx = t.align === 'center' ? x + w / 2 : t.align === 'right' ? x + w : x;
-  wrapLines(ctx, t.content, t.kind === 'point' ? Infinity : w).forEach((l, i) => ctx.fillText(l, tx, y + baselineY(t, i)));
+  ctx.fillStyle = e.fill || '#000'; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  for (const line of layoutText(ctx, e)) {
+    const by = y + baselineY(t, line.i);
+    if (line.words) line.words.forEach((wd) => ctx.fillText(wd.text, wd.x, by)); else ctx.fillText(line.text, line.x, by);
+    decorationBars(t, line, y).forEach((b) => ctx.fillRect(b.x, b.y, b.w, b.h));
+  }
 }
 
 /** Rasterise a scene (not the DOM) to a canvas. Fonts must already be loaded in the document. */
@@ -63,7 +81,7 @@ export async function renderToCanvas(scene, assets, scale = 2) {
     if (e.transform?.rotation) { ctx.translate(x + w / 2, y + h / 2); ctx.rotate(-e.transform.rotation * Math.PI / 180); ctx.translate(-(x + w / 2), -(y + h / 2)); }
     if (e.type === 'text') drawText(ctx, e);
     else if (isCssShape(e)) { if (e.fill) { ctx.fillStyle = e.fill; shapePath(ctx, e); ctx.fill(); } }
-    else { const url = assetUrl(e, assets); try { const img = await loadImage(url); if (e.transform?.scaleY === -1) { ctx.translate(0, y * 2 + h); ctx.scale(1, -1); } ctx.drawImage(img, x, y, w, h); } catch { ctx.fillStyle = '#e6e4de'; ctx.fillRect(x, y, w, h); } }
+    else { const url = assetUrl(e, assets); try { const img = await loadImage(url); if (e.transform?.scaleY === -1) { ctx.translate(0, y * 2 + h); ctx.scale(1, -1); } const cr = e.meta?.crop; if (cr) ctx.drawImage(img, cr.x * img.naturalWidth, cr.y * img.naturalHeight, cr.w * img.naturalWidth, cr.h * img.naturalHeight, x, y, w, h); else ctx.drawImage(img, x, y, w, h); } catch { ctx.fillStyle = '#e6e4de'; ctx.fillRect(x, y, w, h); } }
     ctx.restore();
   }
   return c;
@@ -79,13 +97,16 @@ export function toSvg(scene, assets, imgData = {}) {
     const rot = e.transform?.rotation ? ` transform="rotate(${-e.transform.rotation} ${x + w / 2} ${y + h / 2})"` : '', op = e.opacity !== 1 ? ` opacity="${e.opacity}"` : '';
     if (e.type !== 'text') {
       if (isCssShape(e)) { if (!e.fill) return ''; return e.meta?.kind === 'ellipse' ? `<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" fill="${e.fill}"${rot}${op}/>` : `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.min(e.meta?.cornerRadius || 0, w / 2, h / 2)}" fill="${e.fill}"${rot}${op}/>`; }
-      const u = assetUrl(e, assets); return `<image href="${esc(imgData[u] || u)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"${rot}${op}/>`;
+      const u = assetUrl(e, assets); const cr = e.meta?.crop;
+      if (cr) { const fw = w / cr.w, fh = h / cr.h, cid = 'crop_' + e.id.replace(/[^\w-]/g, ''); return `<g${rot}${op}><clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath><image href="${esc(imgData[u] || u)}" x="${x - cr.x * fw}" y="${y - cr.y * fh}" width="${fw}" height="${fh}" preserveAspectRatio="none" clip-path="url(#${cid})"/></g>`; }
+      return `<image href="${esc(imgData[u] || u)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"${rot}${op}/>`;
     }
-    const t = e.text; measure.font = fontString(t);
-    const lines = wrapLines(measure, t.content, t.kind === 'point' ? Infinity : w);
-    const tx = t.align === 'center' ? x + w / 2 : t.align === 'right' ? x + w : x, anchor = t.align === 'center' ? 'middle' : t.align === 'right' ? 'end' : 'start';
+    const t = e.text; measure.font = fontString(t); if ('letterSpacing' in measure) measure.letterSpacing = (t.letterSpacing || 0) + 'px';
     const cp = coverPad(t); const cover = e.meta?.coverFill ? `<rect x="${x - cp}" y="${y - cp}" width="${w + 2 * cp}" height="${h + 2 * cp}" fill="${e.meta.coverFill}"${rot}/>` : '';
-    return cover + lines.map((l, i) => `<text x="${tx}" y="${y + baselineY(t, i)}" font-family="${esc(t.fontFamily || 'Helvetica')}, sans-serif" font-size="${t.fontSize}" font-weight="${weightOf(t.fontStyle)}" font-style="${isItalic(t.fontStyle) ? 'italic' : 'normal'}" letter-spacing="${t.letterSpacing || 0}" fill="${e.fill || '#000'}" text-anchor="${anchor}"${rot}${op} xml:space="preserve">${esc(l)}</text>`).join('');
+    const attrs = `font-family="${esc(t.fontFamily || 'Helvetica')}, sans-serif" font-size="${t.fontSize}" font-weight="${weightOf(t.fontStyle)}" font-style="${isItalic(t.fontStyle) ? 'italic' : 'normal'}" letter-spacing="${t.letterSpacing || 0}" fill="${e.fill || '#000'}"${rot}${op} xml:space="preserve"`;
+    return cover + layoutText(measure, e).map((line) => { const by = y + baselineY(t, line.i);
+      const glyphs = line.words ? line.words.map((wd) => `<text x="${wd.x}" y="${by}" ${attrs}>${esc(wd.text)}</text>`).join('') : `<text x="${line.x}" y="${by}" ${attrs}>${esc(line.text)}</text>`;
+      return glyphs + decorationBars(t, line, y).map((bar) => `<rect x="${bar.x}" y="${bar.y}" width="${bar.w}" height="${bar.h}" fill="${e.fill || '#000'}"${rot}${op}/>`).join(''); }).join('');
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`;
 }

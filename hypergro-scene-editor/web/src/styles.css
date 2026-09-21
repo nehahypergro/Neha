@@ -369,3 +369,42 @@ select { height: 32px; padding: 0 8px; }
 .crash { max-width: 520px; margin: 18vh auto 0; padding: 0 24px; text-align: left; }
 .crash h1 { font-size: 22px; margin: 0 0 10px; }
 .crash p { font-size: 15px; line-height: 1.55; color: var(--muted, #5b6472); margin: 0 0 18px; }
+
+/* ---- Canva-style editing: marquee, multi-select box, user guides, rulers, preview, segmented toggles */
+.marquee { position: absolute; z-index: 997; border: 1px solid var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); pointer-events: none; }
+.multi-box { position: absolute; z-index: 996; border: 1px dashed var(--blue); pointer-events: none; }
+.guide.user { background: #00b8d9; pointer-events: auto; z-index: 995; }
+.guide.user.x { cursor: ew-resize; } .guide.user.y { cursor: ns-resize; }
+.guide.user i { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
+.stage-wrap.rulers .stage { padding: 20px 0 0 20px; }
+.ruler { position: absolute; z-index: 12; background: var(--panel); }
+.ruler-x { top: 0; left: 0; border-bottom: 1px solid var(--line); cursor: ns-resize; }
+.ruler-y { top: 0; left: 0; border-right: 1px solid var(--line); cursor: ew-resize; }
+.ruler-corner { position: absolute; top: 0; left: 0; width: 20px; height: 20px; z-index: 13; background: var(--panel); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.tgl { min-width: 32px; height: 32px; border: 1px solid var(--line-2); background: #fff; border-radius: 6px; font-weight: 700; font-size: 14px; cursor: pointer; padding: 0 8px; }
+.tgl.on { background: color-mix(in srgb, var(--blue) 14%, #fff); border-color: var(--blue); color: var(--blue); }
+.tgl:disabled { opacity: .4; cursor: default; }
+.tgl.i { font-style: italic; } .tgl.u { text-decoration: underline; } .tgl.s { text-decoration: line-through; }
+.size-input { width: 46px; height: 32px; border: none; text-align: center; font-weight: 700; font-size: 14px; background: transparent; -moz-appearance: textfield; }
+.size-input::-webkit-outer-spin-button, .size-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.dim-input { width: 64px; height: 32px; border: 1px solid var(--line-2); border-radius: 6px; padding: 0 6px; font-weight: 600; }
+.align-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 6px; min-width: 250px; }
+.align-grid button { text-align: left; }
+.align-grid .full { grid-column: 1 / -1; }
+.preview-mode .stage { background: #14161a; }
+.preview-mode .el { cursor: default !important; outline: none !important; }
+.preview-bar { position: fixed; top: 14px; right: 16px; z-index: 2000; display: flex; gap: 8px; align-items: center; }
+.preview-bar .hintsm { color: #cbd1da; }
+.keys { display: grid; grid-template-columns: 1fr auto; gap: 6px 24px; font-size: 14px; margin: 0; }
+.keys dt { color: var(--ink); } .keys dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: var(--muted); text-align: right; white-space: nowrap; }
+.keys h4 { grid-column: 1 / -1; margin: 12px 0 2px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.cropper { position: relative; display: inline-block; max-width: 100%; user-select: none; line-height: 0; background: #111; }
+.cropper img { max-width: 100%; max-height: 56vh; display: block; opacity: .45; }
+.cropper .win { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5); cursor: move; overflow: hidden; }
+.cropper .win img { position: absolute; max-width: none; max-height: none; opacity: 1; }
+.cropper .ch { position: absolute; width: 14px; height: 14px; background: #fff; border: 1.5px solid var(--blue); border-radius: 50%; transform: translate(-50%, -50%); z-index: 2; }
+.preview-mode > header, .preview-mode > .ctx, .preview-mode > .bottom, .preview-mode .side, .preview-mode .assist, .preview-mode .ready-banner, .preview-mode .ehead { display: none !important; }
+.guide.even { background: none; border: 0 dashed var(--hot); }
+.guide.even.x { border-left-width: 1px; } .guide.even.y { border-top-width: 1px; }
+.bottom { overflow-x: auto; }
+.bottom > *, .bottom .check, .bottom .linkbtn { white-space: nowrap; flex-shrink: 0; }

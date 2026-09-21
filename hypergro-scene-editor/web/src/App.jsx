@@ -15,6 +15,9 @@ import { ReadWordsSheet, NameSheet } from './components/Sheets.jsx';
 import { getUserName, setUserName } from './lib/user.js';
 import * as api from './lib/api.js';
 import { fail, report, explain, setErrorContext } from './lib/errors.js';
+import * as E from './lib/edit.js';
+import Rulers from './components/Rulers.jsx';
+import { CropSheet, ResizeSheet, ShortcutsSheet } from './components/EditSheets.jsx';
 import { loadFiles, loadZip, loadUrl, readDrop, addAssets } from './lib/bundle.js';
 import { ensureFonts } from './lib/fonts.js';
 import { localEdit } from './lib/localEdit.js';
@@ -62,6 +65,8 @@ export default function App() {
   const [contentsOpen, setContentsOpen] = useState(() => pref('hg:contents', false)), [assistOpen, setAssistOpen] = useState(() => pref('hg:assist', false));
   const [langProgress, setLangProgress] = useState({}), [bannerGone, setBannerGone] = useState({}), [exportTick, setExportTick] = useState(0), [lastFormat, setLastFormat] = useState(() => { try { return localStorage.getItem('hg:lastFormat') || 'jpg'; } catch { return 'jpg'; } });
   const assistVisits = useRef(0); const viewRef = useRef('home');
+  const [marquee, setMarquee] = useState(null), [userGuides, setUserGuides] = useState([]), [rulers, setRulers] = useState(() => pref('hg:rulers', false)), [preview, setPreview] = useState(false), [saveTick, setSaveTick] = useState(0);
+  const userGuidesRef = useRef(userGuides); userGuidesRef.current = userGuides; const previewRef = useRef(preview); previewRef.current = preview; const pasteCount = useRef(0); const saveNowRef = useRef(false);
   const [dropping, setDropping] = useState(false), [sheet, setSheet] = useState(null), [toast, setToastState] = useState(null);
   const [exchanges, setExchanges] = useState([]), [draft, setDraft] = useState(''), [busy, setBusy] = useState(false);
   const [status, setStatus] = useState({ ok: false, claude: false, model: null, checked: false });
@@ -159,6 +164,10 @@ export default function App() {
     catch (e) { setToast(fail(e, 'opening that creative'), 9000); }
   }
 
+  // ---- guides are a working aid, not part of the creative: kept per creative in this browser, never exported
+  useEffect(() => { try { setUserGuides(JSON.parse(localStorage.getItem('hg:guides:' + (ed.bundleId || ed.fileName)) || '[]')); } catch { setUserGuides([]); } }, [ed.bundleId, ed.fileName]);
+  useEffect(() => { if (!ed.fileName || drag.current?.kind === 'guide') return; try { localStorage.setItem('hg:guides:' + (ed.bundleId || ed.fileName), JSON.stringify(userGuides.filter((g) => g.pos > -9000))); } catch {} }, [userGuides]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- autosave: debounced after any change; server for uploaded creatives, this browser for the sample / opened folders
   useEffect(() => {
     if (!scene || !ed.fileName) return;
@@ -172,9 +181,9 @@ export default function App() {
         if (ed.bundleId) { const c = await renderToCanvas(scene, ed.assets, Math.min(1, 320 / W)); await api.autosave.put(ed.bundleId, { scene, png: c.toDataURL('image/jpeg', 0.7), activity }); setSaveState({ status: 'saved' }); refreshArtworks(); }
         else { localStorage.setItem('hg:autosave:' + ed.fileName, JSON.stringify({ savedAt: Date.now(), scene, activity })); setSaveState({ status: 'local' }); }
       } catch { setSaveState({ status: 'error' }); }
-    }, 1500);
+    }, saveNowRef.current ? 0 : 1500); saveNowRef.current = false;
     return () => clearTimeout(t);
-  }, [scene]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scene, saveTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- upload + understand
   async function runIngest(src, label) {
@@ -224,6 +233,14 @@ export default function App() {
   useEffect(() => {
     const move = (ev) => {
       const d = drag.current; if (!d) return; const sc = sceneRef.current; const z = zoomRef.current; const [w, h] = dimsRef.current;
+      if (d.kind === 'marquee' || d.kind === 'guide') {
+        const r = artRef.current.getBoundingClientRect(); const px = (ev.clientX - r.left) / z, py = (ev.clientY - r.top) / z;
+        if (d.kind === 'guide') { const pos = Math.round(d.axis === 'x' ? px : py); d.pos = pos; d.inside = d.axis === 'x' ? px >= 0 && px <= w : py >= 0 && py <= h; setUserGuides((g) => { const n = [...g]; n[d.index] = { axis: d.axis, pos }; return n; }); return; }
+        if (!d.moved && Math.abs(ev.clientX - d.sx) < 4 && Math.abs(ev.clientY - d.sy) < 4) return; d.moved = true;
+        const box = { x: Math.min(d.x0, px), y: Math.min(d.y0, py), width: Math.abs(px - d.x0), height: Math.abs(py - d.y0) }; setMarquee(box);
+        const hit = sc.elements.filter((e) => e.type !== 'group' && e.visible && !e.locked && !e.meta?.collapsedGroup && e.role !== 'background' && e.bounds.x < box.x + box.width && e.bounds.x + e.bounds.width > box.x && e.bounds.y < box.y + box.height && e.bounds.y + e.bounds.height > box.y).map((e) => e.id);
+        setSel(d.add ? [...new Set([...d.base, ...hit])] : hit); return;
+      }
       if (d.kind === 'rotate') {
         const a = Math.atan2(ev.clientY - d.cy, ev.clientX - d.cx); let rot = d.rot0 - (a - d.a0) * 180 / Math.PI;
         rot = ((rot + 180) % 360 + 360) % 360 - 180; if (ev.shiftKey) rot = Math.round(rot / 15) * 15; if (Math.abs(rot) < 3) rot = 0;
@@ -235,7 +252,7 @@ export default function App() {
       if (d.kind === 'move') {
         const u = unionBounds(d.items); const ids = new Set(d.items.map((i) => i.id));
         const others = sc.elements.filter((e) => e.type !== 'group' && e.visible && !ids.has(e.id) && e.role !== 'background').map((e) => e.bounds);
-        const snap = ev.metaKey || ev.ctrlKey ? { dx: 0, dy: 0, guides: [] } : snapDelta({ ...u, x: u.x + dx, y: u.y + dy }, others, w, h, { margin: 0, threshold: 6 / z });
+        const snap = ev.metaKey || ev.ctrlKey ? { dx: 0, dy: 0, guides: [] } : snapDelta({ ...u, x: u.x + dx, y: u.y + dy }, others, w, h, { margin: 0, threshold: 6 / z, lines: userGuidesRef.current });
         dx += snap.dx; dy += snap.dy; setGuides(snap.guides);
         ops(d.items.map((it) => ({ id: it.id, set: { bounds: { x: Math.round(it.x + dx), y: Math.round(it.y + dy) } } })), null, false);
       } else {
@@ -249,7 +266,10 @@ export default function App() {
         ops([{ id: d.id, set: s }], null, false);
       }
     };
-    const up = () => { if (drag.current) { drag.current = null; setGuides([]); setDragging(false); } };
+    const up = () => { const d = drag.current; if (!d) return;
+      if (d.kind === 'guide' && !d.inside) setUserGuides((g) => g.filter((_, i) => i !== d.index)); // dragged off the creative = removed
+      if (d.kind === 'marquee') { setMarquee(null); if (!d.moved && !d.add) { setSel([]); } }
+      drag.current = null; setGuides([]); setDragging(false); };
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
   }, [dispatch, ops]);
@@ -259,8 +279,30 @@ export default function App() {
     const onKey = (e) => {
       const tag = e.target?.tagName, typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!e.target?.isContentEditable;
       const meta = e.metaKey || e.ctrlKey; const sc = sceneRef.current; const ids = selRef.current;
-      if (e.key === 'Escape') { if (editingRef.current) { setEditing(null); e.target?.blur?.(); } else { setSheet(null); setSel([]); } return; }
+      if (e.key === 'Escape') { if (editingRef.current) { setEditing(null); e.target?.blur?.(); } else if (previewRef.current) setPreview(false); else { setSheet(null); setSel([]); } return; }
+      if (meta && e.key.toLowerCase() === 's') { e.preventDefault(); ctlRef.current.saveNow(); return; } // never let the browser's "save page" dialog open
       if (typing) return;
+      const C = ctlRef.current, k = e.key.toLowerCase(); const one = ids.length === 1 ? sc?.elements.find((x) => x.id === ids[0]) : null; const txt = one?.type === 'text' && !one.locked && one.text.encoding !== 'legacy' ? one : null;
+      if (meta && e.altKey && (k === 'p' || e.code === 'KeyP')) { e.preventDefault(); C.togglePreview(); return; }
+      if (previewRef.current) return;
+      if (meta && k === 'c' && ids.length) { e.preventDefault(); C.copy(ids); return; }
+      if (meta && k === 'x' && ids.length) { e.preventDefault(); C.cut(ids); return; }
+      if (meta && k === 'v') { e.preventDefault(); C.paste(); return; }
+      if (meta && k === 'a') { e.preventDefault(); C.selectAll(); return; }
+      if (meta && k === 'g') { e.preventDefault(); if (e.shiftKey) C.ungroup(ids); else C.group(ids); return; }
+      if (meta && (e.key === ']' || e.key === '}') && ids.length) { e.preventDefault(); C.order(ids, e.shiftKey ? 'front' : 'forward'); return; }
+      if (meta && (e.key === '[' || e.key === '{') && ids.length) { e.preventDefault(); C.order(ids, e.shiftKey ? 'back' : 'backward'); return; }
+      if (meta && e.shiftKey && k === 'l' && !txt && one) { e.preventDefault(); C.setLock(one, !one.locked); return; }
+      if (txt && meta && !e.shiftKey && k === 'b') { e.preventDefault(); C.toggleBold(txt); return; }
+      if (txt && meta && !e.shiftKey && k === 'i') { e.preventDefault(); C.toggleItalic(txt); return; }
+      if (txt && meta && !e.shiftKey && k === 'u') { e.preventDefault(); C.textStyle(txt, { underline: !txt.text.underline }, `${txt.text.underline ? 'Removed the underline from' : 'Underlined'} the ${txt.name}`); return; }
+      if (txt && meta && e.shiftKey && k === 'k') { e.preventDefault(); C.toggleCase(txt); return; }
+      if (txt && meta && e.shiftKey && ['l', 'c', 'r', 'j'].includes(k)) { e.preventDefault(); const a = { l: 'left', c: 'center', r: 'right', j: 'justify' }[k]; C.textStyle(txt, { align: a }, `Aligned the ${txt.name} ${a}`); return; }
+      if (txt && meta && e.shiftKey && (e.key === '>' || e.key === '.')) { e.preventDefault(); C.setFontSize(txt, Math.round(txt.text.fontSize) + 1, `Made the ${txt.name} bigger`); return; }
+      if (txt && meta && e.shiftKey && (e.key === '<' || e.key === ',')) { e.preventDefault(); C.setFontSize(txt, Math.max(6, Math.round(txt.text.fontSize) - 1), `Made the ${txt.name} smaller`); return; }
+      if (!meta && !e.altKey && k === 't') { e.preventDefault(); C.addText(); return; }
+      if (!meta && e.shiftKey && k === 'r') { e.preventDefault(); C.toggleRulers(); return; }
+      if (!meta && e.key === '?') { e.preventDefault(); C.showShortcuts(); return; }
       if (e.key === 'Enter' && ids.length === 1) { const el = sc?.elements.find((x) => x.id === ids[0]); if (el?.type === 'text' && !el.locked) { e.preventDefault(); editSnapped.current = false; setEditing(el.id); } return; }
       if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); dispatch({ type: e.shiftKey ? 'redo' : 'undo' }); return; }
       if (meta && e.key.toLowerCase() === 'd' && ids.length) { e.preventDefault(); ctlRef.current.duplicate(ids); return; }
@@ -387,7 +429,40 @@ export default function App() {
   // ---- controller shared with every component
   const ctl = {
     select, selectFromForm: (id) => { setSel([id]); setFocusKey(Date.now()); }, clearSel: () => setSel([]), set, ops,
-    stageDown: () => { setSel([]); setEditing(null); },
+    stageDown: (ev) => { setEditing(null); if (!ev || ev.button !== 0 || !artRef.current || preview) { setSel([]); return; } const r = artRef.current.getBoundingClientRect(); const z = zoomRef.current; drag.current = { kind: 'marquee', sx: ev.clientX, sy: ev.clientY, x0: (ev.clientX - r.left) / z, y0: (ev.clientY - r.top) / z, add: ev.shiftKey, base: selRef.current, moved: false }; },
+    pullGuide: (ev, axis) => { ev.preventDefault(); const index = userGuidesRef.current.length; setUserGuides((g) => [...g, { axis, pos: -9999 }]); drag.current = { kind: 'guide', axis, index, inside: false }; },
+    guideDown: (ev, index) => { ev.preventDefault(); ev.stopPropagation(); const g = userGuidesRef.current[index]; if (g) drag.current = { kind: 'guide', axis: g.axis, index, inside: true }; },
+    clearGuides: () => setUserGuides([]),
+    toggleRulers: () => setRulers((v) => { try { localStorage.setItem('hg:rulers', JSON.stringify(!v)); } catch {} return !v; }),
+    togglePreview: () => { setPreview((v) => !v); setSel([]); setEditing(null); },
+    showShortcuts: () => setSheet({ shortcuts: true }),
+    saveNow: () => { if (!sceneRef.current) return; saveNowRef.current = true; setSaveTick((t) => t + 1); setToast(edRef.current.bundleId ? 'Saved. Your changes are also saved automatically as you work.' : 'Saved in this browser.', 3500); },
+    copy: (ids) => { const n = E.copyElements(sceneRef.current, ids, edRef.current.assets); if (n) { pasteCount.current = 0; setToast(`Copied ${n > 1 ? n + ' items' : '1 item'}. Paste with ${/Mac/.test(navigator.platform) ? '⌘' : 'Ctrl'} V, here or in another creative.`, 3500); } },
+    cut: (ids) => { const sc = sceneRef.current; const free = E.unlocked(sc, ids).map((e) => e.id); if (!free.length) return; E.copyElements(sc, free, edRef.current.assets); pasteCount.current = 0; ctlRef.current.remove(free); },
+    paste: () => { const sc = sceneRef.current; const clip = E.readClipboard(); if (!sc || !clip) { setToast('Nothing to paste yet. Select something and copy it first.', 4000); return; } const out = E.pasteElements(sc, clip, ++pasteCount.current); if (!out.ids.length) return; const base = edRef.current.bundleId ? `/bundles/${edRef.current.bundleId}/` : null; out.scene.elements.filter((e) => out.ids.includes(e.id)).forEach((e) => { for (const pth of [e.asset, e.assetSvg]) if (pth && !edRef.current.assets[pth] && clip.assetUrls?.[pth]) dispatch({ type: 'asset', path: pth, url: clip.assetUrls[pth] }); }); dispatch({ type: 'replace', scene: out.scene, label: `Pasted ${out.ids.length > 1 ? out.ids.length + ' items' : '1 item'}` }); setSel(out.ids); },
+    selectAll: () => { const sc = sceneRef.current; if (sc) setSel(sc.elements.filter((e) => e.type !== 'group' && e.visible && !e.locked && !e.meta?.collapsedGroup && e.role !== 'background').map((e) => e.id)); },
+    group: (ids) => { const o = E.groupOps(sceneRef.current, ids); if (o.length) ops(o, `Grouped ${o.length} items`); else setToast('Select two or more items to group them. Hold Shift and click, or drag a box around them.', 5000); },
+    ungroup: (ids) => { const o = E.ungroupOps(sceneRef.current, ids); if (o.length) ops(o, 'Ungrouped'); },
+    align: (ids, how) => { const o = E.alignOps(sceneRef.current, ids, how); if (o.length) ops(o, `Aligned ${o.length > 1 ? o.length + ' items' : sceneRef.current.elements.find((x) => x.id === o[0].id)?.name} ${how}`); },
+    distribute: (ids, axis) => { const o = E.distributeOps(sceneRef.current, ids, axis); if (o.length) ops(o, `Spaced ${o.length} items evenly`); else setToast('Select three or more items to space them evenly.', 4000); },
+    order: (ids, action) => { const o = S.reorderOps(sceneRef.current, ids, action); if (o?.length) ops(o, { front: 'Brought to front', back: 'Sent to back', forward: 'Brought forward', backward: 'Sent backward' }[action] || 'Reordered'); },
+    addText: () => { const sc = sceneRef.current; if (!sc) return; const el = E.newTextElement(sc, { family: kitRef.current?.fonts.body.family || 'Lato', color: kitRef.current?.colors?.primary?.[0]?.hex || '#1A1A1A' }); dispatch({ type: 'replace', scene: { ...sc, elements: [...sc.elements, el] }, label: 'Added a text box' }); setSel([el.id]); ensureFonts({ elements: [el] }).then(() => { forgetFonts(); setFontsTick((t) => t + 1); }); setTimeout(() => ctlRef.current.editText(el.id), 60); },
+    addImage: async (f) => { const sc = sceneRef.current; if (!sc || !f) return; if (!/^image\//.test(f.type)) { setToast('That file isn’t a picture. Choose a PNG or JPG image.', 6000); return; }
+      try { const url = URL.createObjectURL(f); const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('invalid image')); i.src = url; });
+        const clean = (Date.now() + '-' + f.name).replace(/[^\w.-]+/g, '-'); const pth = 'user/' + clean; dispatch({ type: 'asset', path: pth, url });
+        const el = E.newImageElement(sc, pth, f.name.replace(/\.[^.]+$/, ''), img.naturalWidth, img.naturalHeight); dispatch({ type: 'replace', scene: { ...sc, elements: [...sc.elements, el] }, label: `Added the picture ${el.name}` }); setSel([el.id]);
+        const bid = edRef.current?.bundleId; if (bid) { const fd = new FormData(); fd.append('file', f); fd.append('name', clean); const r = await fetch(`/api/bundles/${bid}/assets`, { method: 'POST', body: fd }); if (!r.ok) throw new Error('upload ' + r.status); }
+      } catch (e) { setToast(fail(e, 'adding that picture'), 9000); } },
+    textStyle: (el, patch, label) => set(el.id, { text: patch }, label),
+    toggleBold: (el) => { const st = E.styleFrom(!E.isBoldStyle(el.text.fontStyle), E.isItalicStyle(el.text.fontStyle)); set(el.id, { text: { fontStyle: st, postScriptName: null } }, `Made the ${el.name} ${E.isBoldStyle(st) ? 'bold' : 'regular weight'}`); ensureFonts({ elements: [{ text: { ...el.text, fontStyle: st } }] }).then(() => { forgetFonts(); setFontsTick((t) => t + 1); }); },
+    toggleItalic: (el) => { const st = E.styleFrom(E.isBoldStyle(el.text.fontStyle), !E.isItalicStyle(el.text.fontStyle)); set(el.id, { text: { fontStyle: st, postScriptName: null } }, `Made the ${el.name} ${E.isItalicStyle(st) ? 'italic' : 'upright'}`); ensureFonts({ elements: [{ text: { ...el.text, fontStyle: st } }] }).then(() => { forgetFonts(); setFontsTick((t) => t + 1); }); },
+    toggleCase: (el) => set(el.id, { text: { content: E.toggleCase(el.text.content) } }, `Changed the ${el.name} capitals`),
+    toggleList: (el, kind) => set(el.id, { text: { content: E.toggleList(el.text.content, kind), ...(el.text.kind === 'point' ? {} : {}) } }, kind === 'bullet' ? `Made the ${el.name} a bulleted list` : `Made the ${el.name} a numbered list`),
+    openCrop: (el) => setSheet({ crop: el.id }),
+    applyCrop: (el, c) => { const st = E.cropSet(el, c); set(el.id, st, st.meta.crop ? `Cropped ${el.name}` : `Removed the crop from ${el.name}`); setSheet(null); },
+    openResize: () => setSheet({ resize: true }),
+    applyResize: (width) => { const sc = sceneRef.current; const next = E.resizeScene(sc, width); if (next === sc) return; dispatch({ type: 'replace', scene: next, label: `Resized the creative to ${Math.round(next.document.width)} × ${Math.round(next.document.height)} px` }); setUserGuides([]); setZoomMode('fit'); setSheet(null); setToast(`Now ${Math.round(next.document.width)} × ${Math.round(next.document.height)} px. Undo puts it back.`, 6000); },
+    setSize: (el, patch) => { const b = el.bounds; const lock = el.type === 'image'; let w = patch.width ?? b.width, h = patch.height ?? b.height; if (lock) { const r = b.width / b.height; if (patch.width != null) h = w / r; else w = h * r; } w = Math.max(4, Math.round(w)); h = Math.max(4, Math.round(h)); set(el.id, { bounds: { width: w, height: h } }, `Resized ${el.name} to ${w} × ${h} px`); },
     elDown: (ev, id) => startDrag(ev, id, 'move'), handleDown: (ev, id, h) => startDrag(ev, id, 'resize', h), rotateDown: (ev, id) => startDrag(ev, id, 'rotate'), hover: setHover,
     editText: (id) => { const el = sceneRef.current?.elements.find((x) => x.id === id); if (!el || el.type !== 'text' || el.locked) return; setFocusKey(null); setSel([id]); editSnapped.current = false; setEditing(id); },
     editInput: (id, text) => { if (!editSnapped.current) { const el = sceneRef.current?.elements.find((x) => x.id === id); dispatch({ type: 'snapshot', label: `Changed the ${el?.name || 'text'}`, ids: [id] }); editSnapped.current = true; } set(id, { text: { content: text.replace(/\n$/, '') } }, null, false); },
@@ -440,7 +515,7 @@ export default function App() {
       {view === 'home' || !scene ? (
         <Home kit={kit} artworks={artworks} job={job} samples={samples} fonts={fontLib} user={user} onUser={setUser} ctl={ctl} />
       ) : (
-        <div className="editor">
+        <div className={"editor" + (preview ? " preview-mode" : "")}>
           <EditorHeader kit={kit} name={displayName || ed.fileName || scene.document.name} saveState={saveState} exporting={exporting} exportTick={exportTick} lastFormat={lastFormat} langProgress={langProgress} designer={DESIGNER} canUndo={ed.undo.length > 0} canRedo={ed.redo.length > 0} undo={ed.undo} redo={ed.redo} past={past} versions={versions} user={user} onUser={setUser} contentsOpen={contentsOpen} hasCheck={!!art?.readiness} variants={art?.variants || []} language={art?.language || null} ctl={ctl} />
           <Toolbar scene={scene} sel={sel} kit={kit} palette={palette} fullPalette={fullPalette} surfaces={surfaces} ctl={ctl} />
           {art?.readiness && art.readiness.grade !== 'ready' && !bannerGone[ed.bundleId] && !dismissedBanner(ed.bundleId) && (
@@ -457,20 +532,25 @@ export default function App() {
                 {DESIGNER && layersOpen && <section className="activity"><div className="field-label">Layers (developer)</div><Layers scene={scene} sel={sel} ctl={ctl} /></section>}
               </aside>
             )}
-            <div className="stage-wrap">
-              <Canvas scene={scene} W={W} H={H} zoom={zoom} assets={ed.assets} sel={sel} hover={hover} editing={editing} guides={guides} dragging={dragging} showOriginal={showOriginal} referenceUrl={referenceUrl} job={job} stageRef={stageRef} artRef={artRef} ctl={ctl} />
+            <div className={'stage-wrap' + (rulers && !preview ? ' rulers' : '')}>
+              {rulers && !preview && <Rulers stageRef={stageRef} artRef={artRef} zoom={zoom} W={W} H={H} onPull={ctl.pullGuide} />}
+              <Canvas scene={scene} W={W} H={H} zoom={zoom} assets={ed.assets} sel={sel} hover={hover} editing={editing} guides={guides} userGuides={userGuides} marquee={marquee} preview={preview} dragging={dragging} showOriginal={showOriginal} referenceUrl={referenceUrl} job={job} stageRef={stageRef} artRef={artRef} ctl={ctl} />
               <div className="assist" onMouseDown={(e) => e.stopPropagation()}>
                 {assistOpen && <div className="assist-pop"><AskBox exchanges={exchanges} busy={busy} draft={draft} setDraft={setDraft} examples={EXAMPLES} undoLen={ed.undo.length} online={status.claude} ctl={ctl} /></div>}
                 <button className={'spark' + (assistOpen ? ' on' : '') + (!assistOpen && assistVisits.current <= 3 ? ' labelled' : '')} onClick={ctl.toggleAssist} aria-expanded={assistOpen} title={assistOpen ? 'Close' : 'Ask for a change'}>{assistOpen ? '✕' : assistVisits.current <= 3 ? '✦ Ask for a change' : '✦'}</button>
               </div>
             </div>
           </div>
-          <BottomBar scene={scene} issues={issues} W={W} H={H} zoom={zoom} zoomMode={zoomMode} showOriginal={showOriginal} hasReference={!!referenceUrl} ctl={ctl} />
+          <BottomBar scene={scene} issues={issues} W={W} H={H} zoom={zoom} zoomMode={zoomMode} showOriginal={showOriginal} hasReference={!!referenceUrl} rulers={rulers} guideCount={userGuides.length} ctl={ctl} />
         </div>
       )}
       {toast && <div className="toast" role="status" key={toast.at}>{toast.text}{toast.action && <button className="btn small toast-action" onClick={() => { setToast(null); toast.action.fn(); }}>{toast.action.label}</button>}<button className="linkbtn" onClick={() => setToast(null)}>Dismiss</button></div>}
       {sheet?.name && <NameSheet value={user} onClose={() => setSheet(null)} onSave={(n) => { setUser(n); setSheet(null); setToast(`Changes are now recorded as ${n}.`); }} />}
       {sheet?.readWords && <ReadWordsSheet {...sheet.readWords} font={SCRIPT_FONT[sheet.readWords.script] || null} onClose={() => setSheet(null)} onApply={(text) => applyWords(sheet.readWords.el, text, sheet.readWords.script)} onRetry={() => readWords(sheet.readWords.el)} />}
+      {preview && <div className="preview-bar"><span className="hintsm">Preview · Esc to go back</span><button className="btn small" onClick={() => setPreview(false)}>Back to editing</button></div>}
+      {sheet?.shortcuts && <ShortcutsSheet onClose={() => setSheet(null)} />}
+      {sheet?.resize && scene && <ResizeSheet W={W} H={H} onClose={() => setSheet(null)} onApply={ctl.applyResize} />}
+      {sheet?.crop && scene && (() => { const el = scene.elements.find((x) => x.id === sheet.crop); const url = el && (ed.assets[el.asset] || ed.assets[el.assetSvg]); return el && url ? <CropSheet el={el} url={url} onClose={() => setSheet(null)} onApply={(c) => ctl.applyCrop(el, c)} /> : null; })()}
       {sheet?.fileCheck && <FileCheck readiness={sheet.fileCheck} name={sheet.name} kit={kit} onClose={() => setSheet(null)} onStart={() => setSheet(null)} />}
       {sheet?.fontReplace && <FontReplaceSheet family={sheet.fontReplace} suggest={kit?.fonts.body.family} onClose={() => setSheet(null)} onPick={(to) => ctl.replaceFont(sheet.fontReplace, to)} onUpload={async (file) => { const f = await ctl.uploadFont(file); if (f) setSheet(null); }} />}
     </div>

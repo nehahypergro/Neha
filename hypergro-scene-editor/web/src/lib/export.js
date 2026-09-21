@@ -4,7 +4,7 @@
 // Helvetica but stays editable.
 import { jsPDF } from 'jspdf';
 import 'svg2pdf.js';
-import { renderToCanvas, assetUrl, isCssShape, fontString, wrapLines, baselineY, weightOf, isItalic, coverPad, drawText } from './render.js';
+import { renderToCanvas, assetUrl, isCssShape, fontString, wrapLines, baselineY, weightOf, isItalic, coverPad, drawText, layoutText, decorationBars } from './render.js';
 import { textFit } from './issues.js';
 import { scriptFontsFor, SCRIPT_FONTS } from './fonts.js';
 import { libraryFonts } from './fontlib.js';
@@ -90,16 +90,20 @@ export function buildSvg(scene, assets, collected, registered = null) {
       if (!a) return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#e6e4de"${rot}${op}/>`;
       const wrap = (inner) => (rot || op ? `<g${rot}${op}>${inner}</g>` : inner);
       if (a.kind === 'svg') return wrap(inlineSvg(a.text, x, y, w, h));
+      const cr = e.meta?.crop;
+      if (cr) { const fw = w / cr.w, fh = h / cr.h, cid = 'crop_' + e.id.replace(/[^\w-]/g, ''); return `<g${rot}${op}><clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath><image href="${a.href || a.dataUrl}" x="${x - cr.x * fw}" y="${y - cr.y * fh}" width="${fw}" height="${fh}" preserveAspectRatio="none" clip-path="url(#${cid})"/></g>`; }
       return `<image href="${a.href || a.dataUrl}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"${rot}${op}/>`;
     }
-    const t = e.text; measure.font = fontString(t);
+    const t = e.text; measure.font = fontString(t); if ('letterSpacing' in measure) measure.letterSpacing = (t.letterSpacing || 0) + 'px';
     const pic = collected.__text?.[e.id];
     if (pic) { const cp = coverPad(t); const cover = e.meta?.coverFill ? `<rect x="${x - cp}" y="${y - cp}" width="${w + 2 * cp}" height="${h + 2 * cp}" fill="${e.meta.coverFill}"${rot}/>` : ''; return cover + `<image href="${pic.href}" x="${pic.x}" y="${pic.y}" width="${pic.w}" height="${pic.h}" preserveAspectRatio="none"${rot}${op}/>`; }
-    const lines = wrapLines(measure, t.content, t.kind === 'point' ? Infinity : w);
     const tx = t.align === 'center' ? x + w / 2 : t.align === 'right' ? x + w : x, anchor = t.align === 'center' ? 'middle' : t.align === 'right' ? 'end' : 'start';
     const cp = coverPad(t); const cover = e.meta?.coverFill ? `<rect x="${x - cp}" y="${y - cp}" width="${w + 2 * cp}" height="${h + 2 * cp}" fill="${e.meta.coverFill}"${rot}/>` : '';
     const pf = registered ? pdfTextFont(t, registered) : { family: t.fontFamily || 'Helvetica', weight: weightOf(t.fontStyle), italic: isItalic(t.fontStyle) };
-    return cover + lines.map((l, i) => `<text x="${tx}" y="${y + baselineY(t, i)}" font-family="${esc(pf.family)}" font-size="${t.fontSize}" font-weight="${pf.weight}" font-style="${pf.italic ? 'italic' : 'normal'}" letter-spacing="${t.letterSpacing || 0}" fill="${e.fill || '#000'}" text-anchor="${anchor}"${rot}${op} xml:space="preserve">${esc(l)}</text>`).join('');
+    const attrs = `font-family="${esc(pf.family)}" font-size="${t.fontSize}" font-weight="${pf.weight}" font-style="${pf.italic ? 'italic' : 'normal'}" letter-spacing="${t.letterSpacing || 0}" fill="${e.fill || '#000'}"`;
+    return cover + layoutText(measure, e).map((line) => { const by = y + baselineY(t, line.i);
+      const glyphs = line.words ? line.words.map((wd) => `<text x="${wd.x}" y="${by}" ${attrs} text-anchor="start"${rot}${op} xml:space="preserve">${esc(wd.text)}</text>`).join('') : `<text x="${tx}" y="${by}" ${attrs} text-anchor="${anchor}"${rot}${op} xml:space="preserve">${esc(line.text)}</text>`;
+      return glyphs + decorationBars(t, line, y).map((bar) => `<rect x="${bar.x}" y="${bar.y}" width="${bar.w}" height="${bar.h}" fill="${e.fill || '#000'}"${rot}${op}/>`).join(''); }).join('');
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#ffffff"/>${parts.join('')}</svg>`;
 }
