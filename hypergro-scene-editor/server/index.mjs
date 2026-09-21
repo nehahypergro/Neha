@@ -17,7 +17,7 @@ import { ingest } from './ingest.mjs';
 import { chat, translateScene, hasClaude, MODEL, PROVIDER, describeProvider } from './chat.mjs';
 import { library } from './fontlib.mjs';
 import { transcribeElement } from './classify.mjs';
-import { cdnEnabled, pushBundle, storeAsset, restoreFromCdn } from './cdn.mjs';
+import { cdnEnabled, storeAsset, restoreFromCdn, initCdn, syncBundle, syncFonts, syncMissing, scheduleSync, storeOriginal, restoreAll, rootInfo } from './cdn.mjs';
 import { initErrors, reportError, recentErrors, publicMessage } from './errors.mjs';
 import { listBundles, readMeta, writeMeta, duplicateBundle, appendEvents, readEvents, readiness } from './bundles.mjs';
 
@@ -32,6 +32,14 @@ const slug = (s) => (s.replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '-').replace(
 const app = express();
 app.use(express.json({ limit: '30mb' }));
 await initErrors(DATA);
+await initCdn(DATA);
+const FONTS_DIR = path.join(DATA, 'fonts');
+const licensedFont = async (file) => !!(await library.scan()).find((f) => f.file === file && f.legacy);
+// A fresh server (empty disk) rebuilds itself from the CDN: set CDN_ROOT_URL to the last root index address.
+if (cdnEnabled() && process.env.CDN_ROOT_URL) { try { const r = await restoreAll(process.env.CDN_ROOT_URL, BUNDLES, FONTS_DIR); console.log(`[cdn] restored ${r.files} missing files across ${r.bundles} creatives`); } catch (e) { reportError({ where: 'restoring data from the CDN on start', message: e.message, stack: e.stack }); } }
+// Every change to a creative (autosave, saved copy, rename, audit entry, swapped photo, duplicate) is mirrored a few seconds later.
+app.use('/api/bundles/:id', (req, res, next) => { if (req.method !== 'GET') res.on('finish', () => { if (res.statusCode < 400) { scheduleSync(BUNDLES, req.params.id); if (/duplicate/.test(req.path)) setTimeout(() => syncMissing(BUNDLES).catch(() => {}), 1500); } }); next(); });
+app.get('/api/storage', async (req, res) => res.json({ cdn: cdnEnabled(), ...(await rootInfo()) }));
 process.on('unhandledRejection', (e) => reportError({ where: 'unhandled promise on the server', message: e?.message || String(e), stack: e?.stack }));
 process.on('uncaughtException', (e) => { reportError({ where: 'server crash', message: e?.message || String(e), stack: e?.stack }); });
 // The browser reports what went wrong for a user; sendBeacon posts JSON as a blob, so accept text too.
@@ -69,7 +77,7 @@ app.post('/api/ingest', upload.single('file'), async (req, res) => {
     for (const b of earlier) await writeMeta(path.join(BUNDLES, b.id), { supersededBy: id });
     await writeMeta(path.join(BUNDLES, id), { sourceFile: name, name: inherited || scene.document.name, readiness: grade, replaces: earlier.map((b) => b.id), createdAt: Date.now() });
     await appendEvents(path.join(BUNDLES, id), [{ at: Date.now(), by: String(req.body?.by || 'Someone'), label: earlier.length ? `Uploaded a new version of ${name}` : `Uploaded ${name}` }]);
-    if (cdnEnabled()) { job.step = 'store'; const r = await pushBundle(path.join(BUNDLES, id)); if (r.failed) scene.warnings = [...(scene.warnings || []), `${r.failed} image${r.failed > 1 ? 's' : ''} could not be copied to the CDN; they are kept on this server only`]; }
+    if (cdnEnabled()) { job.step = 'store'; await storeOriginal(id, src, name); await syncBundle(BUNDLES, id); syncFonts(FONTS_DIR, licensedFont).catch(() => {}); const m = JSON.parse(await readFile(path.join(BUNDLES, id, 'cdn.json'), 'utf8').catch(() => '{}')); const r = { failed: (await readdir(path.join(BUNDLES, id))).filter((f) => /\.(png|jpe?g)$/i.test(f) && !m[f]).length }; if (r.failed) scene.warnings = [...(scene.warnings || []), `${r.failed} image${r.failed > 1 ? 's' : ''} could not be copied to the CDN; they are kept on this server only`]; }
     job.status = 'done'; job.step = 'done';
     job.result = { bundle: `/bundles/${id}/`, name: inherited || scene.document.name, elements: scene.elements.length, warnings: scene.warnings, classifier: steps.classifier, needsVision: !!scene.ingest?.needsVision, readiness: grade, replaced: earlier.map((b) => b.id) };
   } catch (e) { job.status = 'failed'; job.step = 'failed'; job.error = e.message; reportError({ where: 'processing an uploaded file', message: e.message, stack: e.stack, file: name, job: id, user: String(req.body?.by || '') }); }
@@ -133,7 +141,7 @@ app.get('/api/fonts/:family/:weight', async (req, res) => {
 app.get('/api/fontlib', async (req, res) => res.json(await library.scan()));
 app.post('/api/fontlib', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
-  try { const meta = await library.add(req.file.originalname, await readFile(req.file.path)); res.json(meta); }
+  try { const meta = await library.add(req.file.originalname, await readFile(req.file.path)); res.json(meta); syncFonts(FONTS_DIR, licensedFont).catch(() => {}); }
   catch (e) { res.status(400).json({ error: e.message }); }
   finally { unlink(req.file.path).catch(() => {}); }
 });
