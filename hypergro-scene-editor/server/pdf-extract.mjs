@@ -17,10 +17,19 @@ import { fileURLToPath } from 'node:url';
 const r1 = (v) => Math.round(v * 100) / 100;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 export const hex = (rgb) => '#' + rgb.map((c) => Math.round(clamp01(c) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+// CMYK → sRGB the way Illustrator and the reference render do it (MuPDF's press profile), not the naive formula: naive
+// turns C100 M80 into an electric #163DFF; the press conversion gives the printed-looking #074EA2 designers expect.
+const cmykCache = new Map();
+const cmykToRgb = (color) => {
+  const key = color.map((v) => Math.round(v * 255)).join(','); if (cmykCache.has(key)) return cmykCache.get(key);
+  let rgb; try { const p = new mupdf.Pixmap(mupdf.ColorSpace.DeviceCMYK, [0, 0, 1, 1], false); const d = p.getPixels(); for (let i = 0; i < 4; i++) d[i] = Math.round(color[i] * 255); const r = p.convertToColorSpace(mupdf.ColorSpace.DeviceRGB); const q = r.getPixels(); rgb = [q[0] / 255, q[1] / 255, q[2] / 255]; r.destroy(); p.destroy(); }
+  catch { const [c, m, y, k] = color; rgb = [(1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k)]; }
+  cmykCache.set(key, rgb); return rgb;
+};
 const toRGB = (n, color) => { // mupdf colour → [r,g,b] 0..1 (CMYK converted naively, no ICC)
   if (!color || !color.length) return [0, 0, 0];
   if (n === 1 || color.length === 1) return [color[0], color[0], color[0]];
-  if (n === 4 || color.length === 4) { const [c, m, y, k] = color; return [(1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k)]; }
+  if (n === 4 || color.length === 4) return cmykToRgb(color);
   return color.slice(0, 3);
 };
 const rect = ([x0, y0, x1, y1], ox, oy) => ({ x: r1(x0 - ox), y: r1(y0 - oy), width: r1(x1 - x0), height: r1(y1 - y0) });
