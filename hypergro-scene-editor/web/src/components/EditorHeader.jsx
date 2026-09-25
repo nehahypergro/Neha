@@ -60,6 +60,7 @@ export default function EditorHeader({ kit, name, saveState, exporting, exportTi
             {hasCheck && <button role="menuitem" onClick={() => { close(); ctl.openFileCheck(); }}><b>File check</b><span className="hintsm">What this file lets you change</span></button>}
             <button role="menuitem" onClick={() => { close(); ctl.startNewLikeThis(); }}><b>Start a new one like this</b><span className="hintsm">A fresh copy on the home page</span></button>
             <button role="menuitem" onClick={() => { close(); setNewName(name); setMenu('rename'); }}><b>Rename</b></button>
+            <label role="menuitem" className="menuitem"><b>Add a font file</b><span className="hintsm">.ttf or .otf · used on screen and in every download</span><input type="file" accept=".ttf,.otf,.ttc,font/ttf,font/otf" multiple onChange={async (e) => { const files = [...e.target.files]; e.target.value = ''; close(); for (const f of files) await ctl.uploadFont(f); }} /></label>
             {kit && <a role="menuitem" className="menuitem" href={kit.base + 'brand-book.pdf'} target="_blank" rel="noreferrer"><b>Brand guidelines ↗</b></a>}
             {designer && <>
               <div className="sep" />

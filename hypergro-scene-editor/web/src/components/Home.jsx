@@ -73,11 +73,6 @@ export default function Home({ kit, artworks, job, samples, fonts = [], ctl }) {
             <div className="grid">{rest.map((a) => <Card key={a.id} a={a} ctl={ctl} />)}{q && !filtered.length && <p className="hint">Nothing matches “{q}”.</p>}</div>
           </>
         )}
-        <section className="fontlib">
-          <div className="fontlib-head"><span className="fontlib-title">Fonts on file</span><span className="hintsm">{fonts.length ? `${fonts.length} font${fonts.length > 1 ? 's' : ''} · used on screen and in every download` : 'None yet'}</span><span className="spacer" /><label className="btn small">Add a font file<input type="file" accept=".ttf,.otf,.ttc,font/ttf,font/otf" multiple onChange={async (e) => { const files = [...e.target.files]; e.target.value = ''; for (const f of files) await ctl.uploadFont(f); }} /></label></div>
-          {fonts.length > 0 && <ul className="fontlist">{fonts.map((f) => <li key={f.file}><span className="font-sample" style={{ fontFamily: `"${f.family}"`, fontWeight: f.weight || 400, fontStyle: f.italic ? 'italic' : 'normal' }}>Aa</span><span className="font-name">{f.family}{f.style && f.style !== 'Regular' ? ` · ${f.style}` : ''}</span><span className="hintsm">{f.subset ? 'partial · from an uploaded file' : f.legacy ? `legacy ${f.legacyScript || 'Indic'} font` : f.scripts?.filter((s) => s !== 'latin').length ? f.scripts.filter((s) => s !== 'latin').join(', ') : 'Latin'}</span></li>)}</ul>}
-          <p className="hintsm">Fonts your designers use in the .ai files. “Partial” fonts were pulled out of an uploaded file: the words already in the creative render exactly, but letters that were not in the file may fall back until the full font is added.</p>
-        </section>
         {kit && <p className="home-foot">On-brand by default: {kit.name} colours, {kit.fonts.headline.family} headlines and {kit.fonts.body.family} copy.</p>}
       </div>
     </div>
