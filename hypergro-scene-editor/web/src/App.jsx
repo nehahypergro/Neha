@@ -17,6 +17,7 @@ import * as api from './lib/api.js';
 import { fail, report, explain, setErrorContext } from './lib/errors.js';
 import * as E from './lib/edit.js';
 import * as R from './lib/rich.js';
+import { PRESETS, adaptScene, isSizeLabel } from './lib/adapt.js';
 import Rulers from './components/Rulers.jsx';
 import { CropSheet, ResizeSheet, ShortcutsSheet } from './components/EditSheets.jsx';
 import { loadFiles, loadZip, loadUrl, readDrop, addAssets } from './lib/bundle.js';
@@ -377,6 +378,24 @@ export default function App() {
       return rec;
     } catch (e) { setToast(fail(e, 'making the copy'), 9000); return null; }
   }
+  // Size adapts: each preset becomes its own linked creative, re-composed for that shape, editable afterwards.
+  async function makeSizes(ids) {
+    const a = artRefState.current, sc = sceneRef.current; if (!a?.id || !sc || !ids.length) { setToast('Upload a creative first to make other sizes.'); return; }
+    setLangProgress((p) => ({ ...p, ...Object.fromEntries(ids.map((i) => [PRESETS.find((x) => x.id === i).label, 'pending'])) }));
+    const made = []; const ctx = document.createElement('canvas').getContext('2d');
+    let ref = null; try { const url = edRef.current.assets[sc.document.artboards?.[sc.document.activeArtboard ?? 0]?.reference]; if (url) { const img = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = url; }); ref = document.createElement('canvas'); const k = Math.min(1, 1200 / img.naturalWidth); ref.width = Math.round(img.naturalWidth * k); ref.height = Math.round(img.naturalHeight * k); ref.getContext('2d').drawImage(img, 0, 0, ref.width, ref.height); } } catch { ref = null; }
+    for (const id of ids) { const preset = PRESETS.find((x) => x.id === id); if (!preset) continue; const label = preset.label;
+      setLangProgress((p) => ({ ...p, [label]: 'working' }));
+      try { const next = adaptScene(sc, preset, ctx, ref); const name = `${displayName || a.name} · ${label}`;
+        const r = await api.bundles.duplicate(a.id, { name, language: label, variantOf: a.id, scene: next, by: by(), fromName: displayName || a.name });
+        made.push({ lang: label, rec: { id: r.id, bundle: r.bundle, name: r.name, language: label, variants: [] } }); setLangProgress((p) => ({ ...p, [label]: 'done' })); logEvent(`Made the ${label} size`); }
+      catch (e) { report(e, 'making a size adapt', { preset: id }); setLangProgress((p) => ({ ...p, [label]: 'error' })); }
+    }
+    refreshArtworks();
+    if (made.length) { const first = made[0]; setToast(`${made.length} size${made.length > 1 ? 's' : ''} ready. Each one is a copy you can tidy up.`, 9000, { label: `Open ${first.lang}`, fn: () => openArtwork(first.rec) }); }
+    else setToast('No size could be made. Try again, and if it fails again tell the team.', 8000);
+    setTimeout(() => setLangProgress((p) => Object.fromEntries(Object.entries(p).filter(([, v]) => v === 'error'))), 4000);
+  }
   async function makeLanguages(langs) {
     const a = artRefState.current, sc = sceneRef.current; if (!a?.id || !sc || !langs.length) { setToast('Upload a creative first to make language versions.'); return; }
     setLangProgress((p) => ({ ...p, ...Object.fromEntries(langs.map((l) => [l, 'pending'])) }));
@@ -499,7 +518,7 @@ export default function App() {
       ctlRef.current.insertLogo(logo, { x: Math.round(u.x), y: Math.round(u.y), width: Math.round(u.width), scene: hidden, label: `Swapped the logo for ${logo.name}` }); },
     uploadFont: async (file) => { try { const f = await uploadFont(file); setFontLib(libraryFonts()); forgetFonts(); setFontsTick((t) => t + 1); const sc = sceneRef.current; if (sc) { const mapped = mapSceneFonts(structuredClone(sc)); if (JSON.stringify(mapped) !== JSON.stringify(sc)) dispatch({ type: 'replace', scene: mapped, label: `Applied the font ${f.family}` }); } setToast(`Stored ${f.family}${f.style && f.style !== 'Regular' ? ' ' + f.style : ''}. Text in that font now shows correctly here and in downloads.`, 6000); return f; } catch (e) { setToast('Could not store that font: ' + e.message, 6000); return null; } },
     surfaceAtDefault: () => { const k = kitRef.current, sc = sceneRef.current; if (!k || !sc) return Promise.resolve(null); const w = sc.document.width, h = sc.document.height, m = safeMargin(w, h); const width = Math.max(120, Math.min(360, Math.round(w * 0.22))); return surfaceUnder(sc, edRef.current.assets, { x: m, y: m, width, height: Math.round(width * 0.18) }); },
-    runChat, undo: () => dispatch({ type: 'undo' }), redo: () => dispatch({ type: 'redo' }),
+    runChat, makeSizes, undo: () => dispatch({ type: 'undo' }), redo: () => dispatch({ type: 'redo' }),
     saveVersion, restoreVersion, rename, renameArtwork: (a, n) => api.bundles.meta(a.id, { name: n, by: by() }).then(refreshArtworks).catch(() => {}), duplicateArtwork, startNewLikeThis: () => { const a = artRefState.current; if (a?.id) duplicateArtwork({ ...a, name: displayName || a.name }); else setToast('Upload a creative first.'); },
     archiveArtwork: (a) => api.bundles.meta(a.id, { archived: true, by: by() }).then(refreshArtworks).catch(() => {}), openVariant: (v) => openArtwork({ id: v.id, bundle: `/bundles/${v.id}/`, name: v.name, language: v.language, variants: [] }), makeLanguages, openFileCheck: () => { const a = artRefState.current; if (a?.readiness) setSheet({ fileCheck: a.readiness, name: displayName || a.name }); }, setUser, logEvent, readWords,
     setZoom: (z) => { setZoom(Math.min(4, Math.max(.1, z))); setZoomMode('manual'); }, fit: () => setZoomMode('fit'),

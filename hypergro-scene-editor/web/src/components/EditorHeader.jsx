@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Activity from './Activity.jsx';
+import { PRESETS, isSizeLabel } from '../lib/adapt.js';
 
 const FORMAT_LABEL = { jpg: 'Download JPG', pdf: 'Download print file', ai: 'Download .ai', png: 'Download PNG', svg: 'Download SVG' };
 const PHASE_LABEL = { fonts: 'fonts', images: 'images', writing: 'writing the file', rendering: 'rendering' };
@@ -33,7 +34,11 @@ export default function EditorHeader({ kit, name, saveState, exporting, exportTi
         </span>
         <span className="menu-wrap">
           <button className="btn ghost" onClick={() => setMenu(menu === 'lang' ? null : 'lang')} aria-expanded={menu === 'lang'}>🌐 Languages{variants.length ? ` · ${variants.length}` : ''}</button>
-          {pop('lang', <LanguageMenu variants={variants} language={language} progress={langProgress} ctl={ctl} close={close} />, 'plain')}
+          {pop('lang', <LanguageMenu variants={variants.filter((v) => !isSizeLabel(v.language))} language={isSizeLabel(language) ? null : language} progress={Object.fromEntries(Object.entries(langProgress).filter(([k]) => !isSizeLabel(k)))} ctl={ctl} close={close} />, 'plain')}
+        </span>
+        <span className="menu-wrap">
+          <button className="btn ghost" onClick={() => setMenu(menu === 'size' ? null : 'size')} aria-expanded={menu === 'size'}>⤢ Sizes{variants.filter((v) => isSizeLabel(v.language)).length ? ` · ${variants.filter((v) => isSizeLabel(v.language)).length}` : ''}</button>
+          {pop('size', <SizeMenu variants={variants.filter((v) => isSizeLabel(v.language))} size={isSizeLabel(language) ? language : null} progress={Object.fromEntries(Object.entries(langProgress).filter(([k]) => isSizeLabel(k)))} ctl={ctl} close={close} />, 'plain')}
         </span>
         <span className="menu-wrap">
           <button className="btn" onClick={() => setMenu(menu === 'copy' ? null : 'copy')}>Save a copy</button>
@@ -78,6 +83,22 @@ export default function EditorHeader({ kit, name, saveState, exporting, exportTi
 
 export const LANGUAGES = ['Hindi', 'Malayalam', 'Tamil', 'Telugu', 'Kannada', 'Bengali', 'Gujarati', 'Marathi', 'Punjabi', 'Odia', 'Assamese', 'English'];
 
+function SizeMenu({ variants, size, progress = {}, ctl, close }) {
+  const [picked, setPicked] = useState([]);
+  const have = new Set(variants.map((v) => v.language)); const inFlight = Object.entries(progress); const busy = inFlight.some(([, s]) => s === 'pending' || s === 'working');
+  return (
+    <div className="langmenu">
+      <div className="field-label">Sizes</div>
+      {size && <div className="hintsm">This is the {size} version.</div>}
+      {inFlight.length > 0 && <ul className="lang-progress">{inFlight.map(([l, s]) => <li key={l} className={s}><span className="mark">{s === 'done' ? '✓' : s === 'error' ? '!' : s === 'working' ? <i className="spin" /> : '·'}</span><span>{l}</span>{s === 'working' && <span className="hintsm">laying out…</span>}</li>)}</ul>}
+      {variants.length > 0 && <ul className="variants">{variants.map((v) => <li key={v.id}><span className="thumb-sm">{v.thumb ? <img src={v.thumb} alt="" /> : null}</span><span className="v-name">{v.language}</span><button className="linkbtn" onClick={() => { close(); ctl.openVariant(v); }}>Open</button></li>)}</ul>}
+      <div className="field-label">Make this creative as</div>
+      <div className="langgrid">{PRESETS.filter((p) => !have.has(p.label) && p.label !== size && !progress[p.label]).map((p) => <label key={p.id} className="check" title={p.hint}><input type="checkbox" checked={picked.includes(p.id)} onChange={(e) => setPicked(e.target.checked ? [...picked, p.id] : picked.filter((x) => x !== p.id))} /> {p.label} <span className="hintsm">{p.w}×{p.h}</span></label>)}</div>
+      <p className="hintsm">Each size is re-composed for its shape and becomes its own creative. It is a good starting point, not a finished ad: check it and tidy up before you use it.</p>
+      <div className="row-btns"><button className="btn accent small" disabled={!picked.length} onClick={() => { ctl.makeSizes(picked); setPicked([]); }}>{`Make ${picked.length || ''} size${picked.length === 1 ? '' : 's'}`}</button>{busy && <span className="hintsm">working…</span>}</div>
+    </div>
+  );
+}
 function LanguageMenu({ variants, language, progress = {}, ctl, close }) {
   const [picked, setPicked] = useState([]);
   const have = new Set(variants.map((v) => v.language)); const inFlight = Object.entries(progress);
