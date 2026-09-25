@@ -1,6 +1,6 @@
 // Live guardrail checks: text overflow, tiny logos, safe-zone violations, unavailable fonts, missing assets, plus
 // notes from ingestion. Every issue carries an action the panel can run.
-import { fontString, wrapLines, lineHeightOf, assetUrl, isCssShape, layoutText } from './render.js';
+import { fontString, wrapLines, lineHeightOf, assetUrl, isCssShape, layoutText, onPage } from './render.js';
 import { listIndent } from './rich.js';
 import { isBrandColor, nearestBrandColor, isBrandFont, brandFontFor } from './brand.js';
 import { libraryHas } from './fontlib.js';
@@ -32,7 +32,7 @@ export function fitFontSize(e) { let fs = e.text.fontSize; while (fs > 8) { cons
 export function computeIssues(scene, assets, W, H, kit = null) {
   if (!scene) return [];
   const out = [];
-  const leaves = scene.elements.filter((e) => e.type !== 'group' && e.visible);
+  const leaves = scene.elements.filter((e) => e.type !== 'group' && e.visible && onPage(scene, e));
   for (const f of [...new Set(scene.elements.filter((e) => e.type !== 'group' && e.visible && e.text?.fontFamily).map((e) => e.text.fontFamily))]) {
     if (!fontAvailable(f)) out.push({ id: 'font:' + f, severity: 'warn', title: `Font “${f}” isn’t available on this computer`, detail: 'The canvas and exports use a fallback font, so text may look different from the original. Install the font, or replace it in the creative.', action: { type: 'replaceFont', family: f, label: 'Replace font…' } });
   }

@@ -5,7 +5,7 @@ import { segText } from './rich.js';
 // Helvetica but stays editable.
 import { jsPDF } from 'jspdf';
 import 'svg2pdf.js';
-import { renderToCanvas, assetUrl, isCssShape, fontString, wrapLines, baselineY, weightOf, isItalic, coverPad, drawText, layoutText, decorationBars } from './render.js';
+import { renderToCanvas, assetUrl, isCssShape, fontString, wrapLines, baselineY, weightOf, isItalic, coverPad, drawText, layoutText, decorationBars, onPage } from './render.js';
 import { textFit } from './issues.js';
 import { scriptFontsFor, SCRIPT_FONTS } from './fonts.js';
 import { libraryFonts } from './fontlib.js';
@@ -82,7 +82,7 @@ function inlineSvg(text, x, y, w, h) {
 export function buildSvg(scene, assets, collected, registered = null) {
   const W = scene.document.width, H = scene.document.height;
   const measure = document.createElement('canvas').getContext('2d');
-  const parts = scene.elements.filter((e) => e.type !== 'group' && e.visible).sort((a, b) => a.zIndex - b.zIndex).map((e) => {
+  const parts = scene.elements.filter((e) => e.type !== 'group' && e.visible && onPage(scene, e)).sort((a, b) => a.zIndex - b.zIndex).map((e) => {
     const { x, y, width: w, height: h } = e.bounds;
     const rot = e.transform?.rotation ? ` transform="rotate(${-e.transform.rotation} ${x + w / 2} ${y + h / 2})"` : '', op = e.opacity !== 1 ? ` opacity="${e.opacity}"` : '';
     if (e.type !== 'text') {
@@ -140,8 +140,14 @@ export async function renderVectorPdf(scene, assets, onPhase = () => {}) {
     // 1 scene px = 1 pt, the same mapping the ingest uses, so a round trip keeps every size unchanged.
     const doc = new jsPDF({ orientation: W > H ? 'l' : 'p', unit: 'pt', format: [W, H], compress: true });
     onPhase('fonts'); const { embedded: fonts, registered } = await registerFonts(doc, scene);
-    const svg = new DOMParser().parseFromString(buildSvg(scene, assets, collected, registered), 'image/svg+xml').documentElement;
-    onPhase('writing'); await doc.svg(svg, { x: 0, y: 0, width: W, height: H });
+    // Every artboard becomes a page, in order, so a multi-page statement comes back as one document.
+    const boards = scene.document.artboards?.length ? scene.document.artboards : [{ id: 0, width: W, height: H }];
+    for (let i = 0; i < boards.length; i++) {
+      const b = boards[i]; const pw = b.width || W, ph = b.height || H; if (i > 0) doc.addPage([pw, ph], pw > ph ? 'l' : 'p');
+      const page = { ...scene, document: { ...scene.document, activeArtboard: b.id ?? i, width: pw, height: ph } };
+      const svg = new DOMParser().parseFromString(buildSvg(page, assets, collected, registered), 'image/svg+xml').documentElement;
+      onPhase('writing'); await doc.svg(svg, { x: 0, y: 0, width: pw, height: ph });
+    }
     doc.setProperties({ title: scene.document.name, creator: 'Federal Bank creative editor' });
     return { blob: doc.output('blob'), fonts };
   } finally { releaseAssets(collected); }

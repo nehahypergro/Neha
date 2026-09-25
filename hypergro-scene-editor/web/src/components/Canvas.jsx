@@ -1,7 +1,7 @@
 import React from 'react';
 import { cropCss } from '../lib/edit.js';
 import { paragraphs, toHtml, fromDom, listIndent } from '../lib/rich.js';
-import { weightOf, isItalic, fontFamilyCss, lineHeightOf, assetUrl, isCssShape, coverPad } from '../lib/render.js';
+import { onPage, weightOf, isItalic, fontFamilyCss, lineHeightOf, assetUrl, isCssShape, coverPad } from '../lib/render.js';
 
 const HANDLES = [['nw', 0, 0], ['n', .5, 0], ['ne', 1, 0], ['e', 1, .5], ['se', 1, 1], ['s', .5, 1], ['sw', 0, 1], ['w', 0, .5]];
 const CURSOR = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize' };
@@ -28,7 +28,7 @@ const startEditing = (node, text) => {
 };
 
 export default function Canvas({ scene, W, H, zoom, assets, sel, hover, editing, guides, userGuides = [], marquee = null, preview = false, dragging, showOriginal, referenceUrl, job, stageRef, artRef, ctl }) {
-  const leaves = scene ? scene.elements.filter((e) => e.type !== 'group').sort((a, b) => a.zIndex - b.zIndex) : [];
+  const leaves = scene ? scene.elements.filter((e) => e.type !== 'group' && onPage(scene, e)).sort((a, b) => a.zIndex - b.zIndex) : [];
   const primary = scene?.elements.find((e) => e.id === sel[0]);
   const showHandles = primary && !primary.locked && sel.length === 1 && !editing && !preview;
   const b = primary?.bounds;

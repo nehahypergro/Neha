@@ -154,7 +154,10 @@ export async function classify(scene, outDir) {
 const hexRgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); if (!m) return null; const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 async function cutRegion(outDir, scene, box, fill, index) {
   const s = scene.ingest?.referenceScale || 2;
-  const allLayers = scene.elements.filter((e) => e.meta?.collapsedGroup && e.asset).sort((a, b) => a.zIndex - b.zIndex);
+  // Only this page's layers: a multi-page file has the same logo on every page, and cutting it out of all of them would leave
+  // pages 2+ without a logo and stack three slightly offset copies on page 1.
+  const ab = scene.document?.activeArtboard ?? 0;
+  const allLayers = scene.elements.filter((e) => e.meta?.collapsedGroup && e.asset && (e.artboardId ?? 0) === ab).sort((a, b) => a.zIndex - b.zIndex);
   if (!allLayers.length) return null;
   // A promoted shape or image that overlaps the box and sits between two artwork layers keeps those layers apart: the
   // clapperboard's yellow panel (its own element) hides part of the purple plate painted below it, and merging the plate

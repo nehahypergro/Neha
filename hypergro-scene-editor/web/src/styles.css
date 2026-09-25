@@ -422,3 +422,6 @@ select { height: 32px; padding: 0 8px; }
 .el.text.list .para.empty { counter-increment: none; }
 .el.text.list .para.empty::before { content: none; }
 .el.text.editing .para:empty::after { content: '\200b'; }
+
+.pager { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.pager .tb:disabled { opacity: .35; }

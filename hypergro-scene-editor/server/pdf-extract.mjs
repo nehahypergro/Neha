@@ -88,11 +88,11 @@ export class ExtractError extends Error { constructor(msg, code = 'EXTRACT_FAIL'
 
 // Walk a filled path: bounds in device space, plus whether it is a rectangle / rounded rectangle / ellipse that can be
 // promoted to an editable shape element (drawn by the editor as a CSS rect instead of being baked into the artwork raster).
-function inspectPath(pth, ctm) {
-  let lines = 0, curves = 0, subpaths = 0, cur = null; const anchors = [], all = [], hlines = [], arcs = [];
+export function inspectPath(pth, ctm) {
+  let lines = 0, curves = 0, subpaths = 0, cur = null; const anchors = [], all = [], hlines = [], arcs = [], lineEnds = [];
   pth.walk({
     moveTo(x, y) { subpaths++; cur = [x, y]; anchors.push(cur); all.push(cur); },
-    lineTo(x, y) { lines++; if (cur && Math.abs(y - cur[1]) < 0.01) hlines.push(Math.abs(x - cur[0])); cur = [x, y]; anchors.push(cur); all.push(cur); },
+    lineTo(x, y) { lines++; if (cur && Math.abs(y - cur[1]) < 0.01) hlines.push(Math.abs(x - cur[0])); if (cur) lineEnds.push(cur, [x, y]); cur = [x, y]; anchors.push(cur); all.push(cur); },
     curveTo(x1, y1, x2, y2, x3, y3) { curves++; if (cur) arcs.push([cur, [x3, y3]]); all.push([x1, y1], [x2, y2]); cur = [x3, y3]; anchors.push(cur); all.push(cur); },
     closePath() {},
   });
@@ -117,8 +117,19 @@ function inspectPath(pth, ctm) {
   // A rounded rectangle only curves at its corners: every curve is short (at most half the short side) and its ends sit on
   // the bounding box. A panel with one long sweeping side also fills most of its box, but drawing it as a CSS rectangle
   // would square that side off and cover what the curve leaves visible.
-  const half = Math.min(w, h) / 2 * 1.08 + tol; const onBox = ([px, py]) => near(px, bounds[0]) || near(px, bounds[2]) || near(py, bounds[1]) || near(py, bounds[3]);
-  const cornersOnly = arcs.every(([p, q]) => { const a = T(p), b2 = T(q); return Math.abs(a[0] - b2[0]) <= half && Math.abs(a[1] - b2[1]) <= half && onBox(a) && onBox(b2); });
+  const half = Math.min(w, h) / 2 * 1.08 + tol;
+  // Illustrator often draws one corner as two curves, so the test is per endpoint: every curve endpoint must sit inside a
+  // corner square (half the short side), not necessarily on the box edge. A sweep across a whole side fails this.
+  const corners = [[bounds[0], bounds[1]], [bounds[2], bounds[1]], [bounds[0], bounds[3]], [bounds[2], bounds[3]]];
+  const cornerOf = ([px, py]) => corners.findIndex(([cx, cy]) => Math.abs(px - cx) <= half && Math.abs(py - cy) <= half);
+  // both ends of a curve must belong to the SAME corner: a sweep from one corner's region to another's is a shaped side
+  const onEdge = ([x, y]) => near(x, bounds[0]) || near(x, bounds[2]) || near(y, bounds[1]) || near(y, bounds[3]);
+  // …and every anchor sits on the box edge: a diagonal or a curve ending mid-panel means a shaped side, not a rounded corner
+  // straight segments (and the closing segment) must run along the box edge; curve anchors may sit inside a corner square
+  const straightOnEdge = [...lineEnds, anchors[0], anchors[anchors.length - 1]].every((pt) => onEdge(T(pt)));
+  // (a pill's side arc is often split at the midpoint, so the two ends may belong to neighbouring corners: any corner will do)
+  const cornersOnly = straightOnEdge && arcs.every(([p, q]) => cornerOf(T(p)) >= 0 && cornerOf(T(q)) >= 0);
+  if (process.env.HG_DEBUG_SHAPES) out.dbg = { curves, lines, ratio: Math.round(ratio * 100) / 100, straightOnEdge, cornersOnly, anchors: poly.map((q) => q.map(Math.round).join(',')).join(' ') };
   if (out.kind) { /* already a plain rectangle */ } else if (curves > 0 && curves <= 8 && lines <= 8 && ratio > 0.62 && cornersOnly) { out.kind = 'rect'; const span = hlines.length ? Math.max(...hlines) * sc : 0; out.radius = Math.min(span ? Math.max(0, (w - span) / 2) : Math.min(w, h) / 2, Math.min(w, h) / 2); }
   else if (curves === 4 && lines <= 4 && ratio > 0.4 && ratio <= 0.62) { out.kind = 'ellipse'; out.radius = Math.min(w, h) / 2; }
   return out;
@@ -163,9 +174,10 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
     const toPt = ([x0, y0, x1, y1]) => [x0 / scale, y0 / scale, x1 / scale, y1 / scale];
 
     // 1. reference render (visual ground truth) + preview for the vision pass
-    await writeFile(path.join(out, `reference-${p}.png`), page.toPixmap(m, mupdf.ColorSpace.DeviceRGB, false).asPNG());
+    // MuPDF's WebAssembly heap is not garbage-collected: free every pixmap once its PNG is written, or a multi-page A4 at 4× dies on page 2.
+    { const rp = page.toPixmap(m, mupdf.ColorSpace.DeviceRGB, false); await writeFile(path.join(out, `reference-${p}.png`), rp.asPNG()); rp.destroy(); }
     previewScale = Math.max(W, H) > previewMax ? previewMax / Math.max(W, H) : Math.max(W, H) < 500 ? 2 : 1;
-    await writeFile(path.join(out, `preview-${p}.png`), page.toPixmap(mupdf.Matrix.scale(previewScale, previewScale), mupdf.ColorSpace.DeviceRGB, false).asPNG());
+    { const pp = page.toPixmap(mupdf.Matrix.scale(previewScale, previewScale), mupdf.ColorSpace.DeviceRGB, false); await writeFile(path.join(out, `preview-${p}.png`), pp.asPNG()); pp.destroy(); }
 
     // 2. artwork layer: run the page through a filtering device. Text is dropped (it becomes text elements); rectangle-like
     //    fills and unclipped images are promoted to their own elements and skipped here, everything else is rasterised.
@@ -188,6 +200,9 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
       const split = () => { if (!(cur && cur.used && layers.length < 8 && tileDepth === 0 && stack.every((c) => c.replay))) return; for (let i = stack.length - 1; i >= 0; i--) { if (stack[i].kind === 'clip') cur.draw.popClip(); else cur.draw.endGroup(); } cur = null; };
       const popKind = (kind) => { for (let i = stack.length - 1; i >= 0; i--) if (stack[i].kind === kind) return stack.splice(i, 1)[0]; return null; };
       const safe = (fn) => { try { return fn(); } catch { return null; } };
+      // Every path handed to a callback belongs to MuPDF and is freed when the callback returns. Anything replayed later
+      // (clips onto a new layer, a demoted shape) must use our own copy, or it reads freed memory and corrupts the heap.
+      const own = (pth) => { const c = new mupdf.Path(); pth.walk({ moveTo: (x, y) => c.moveTo(x, y), lineTo: (x, y) => c.lineTo(x, y), curveTo: (a1, b1, c1, d1, e1, f1) => c.curveTo(a1, b1, c1, d1, e1, f1), closePath: () => c.closePath() }); return c; };
       const dev = new mupdf.Device({
         fillPath(pth, eo, ctm, cs, color, alpha) {
           stats.paths++;
@@ -199,7 +214,9 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
               const n = safe(() => cs.getNumberOfComponents()) ?? color.length;
               const b = rect(toPt(info.bounds), bx0, by0);
               const shape = el({ id: nid('shp'), type: 'vector', name: info.kind === 'ellipse' ? 'Ellipse' : 'Shape', artboardId: p, bounds: b, fill: hex(toRGB(n, color)), opacity: r1(alpha), renderMode: 'css', meta: { kind: info.kind, cornerRadius: r1(info.radius / scale), promoted: true } });
-              Object.defineProperty(shape, '_draw', { value: { pth, eo, ctm, cs, color, alpha, box: info.bounds }, enumerable: false });
+              // Keep our own copy: the path and colour space handed to the callback are MuPDF's and are freed when page.run ends;
+              // drawing them again later (a demoted shape) would read freed memory and corrupt the heap.
+              Object.defineProperty(shape, '_draw', { value: { pth: own(pth), eo, ctm: [...ctm], rgb: toRGB(n, color), alpha, box: info.bounds }, enumerable: false });
               pageEls.push(shape);
               stats.shapesPromoted++;
               split(); return; // not baked into the artwork
@@ -224,11 +241,11 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
           D().fillImage(image, ctm, alpha);
         },
         strokePath(pth, ss, ctm, cs, color, alpha) { stats.paths++; D().strokePath(pth, ss, ctm, cs, color, alpha); },
-        clipPath(pth, eo, ctm) { const info = safe(() => inspectPath(pth, ctm)); stack.push({ kind: 'clip', bounds: info?.kind === 'rect' ? info.bounds : (info ? info.bounds : null), mask: false, replay: (d) => d.clipPath(pth, eo, ctm) }); if (cur) cur.draw.clipPath(pth, eo, ctm); },
-        clipStrokePath(pth, ss, ctm) { stack.push({ kind: 'clip', bounds: null, mask: false, replay: (d) => d.clipStrokePath(pth, ss, ctm) }); if (cur) cur.draw.clipStrokePath(pth, ss, ctm); },
+        clipPath(pth, eo, ctm) { const info = safe(() => inspectPath(pth, ctm)); const mine = own(pth), m2 = [...ctm]; stack.push({ kind: 'clip', bounds: info?.kind === 'rect' ? info.bounds : (info ? info.bounds : null), mask: false, replay: (d) => d.clipPath(mine, eo, m2) }); if (cur) cur.draw.clipPath(pth, eo, ctm); },
+        clipStrokePath(pth, ss, ctm) { const mine = own(pth), m2 = [...ctm]; stack.push({ kind: 'clip', bounds: null, mask: false, replay: (d) => d.clipPath(mine, false, m2) /* stroke state is MuPDF's; a fill clip of the same outline is the safe approximation */ }); if (cur) cur.draw.clipStrokePath(pth, ss, ctm); },
         clipImageMask(img, ctm) { stack.push({ kind: 'clip', bounds: null, mask: true }); L().draw.clipImageMask(img, ctm); },
-        clipText(t, ctm) { stack.push({ kind: 'clip', bounds: null, mask: true, replay: (d) => d.clipPath(new mupdf.Path(), false, ctm) }); if (cur) cur.draw.clipPath(new mupdf.Path(), false, ctm); },
-        clipStrokeText(t, ss, ctm) { stack.push({ kind: 'clip', bounds: null, mask: true, replay: (d) => d.clipPath(new mupdf.Path(), false, ctm) }); if (cur) cur.draw.clipPath(new mupdf.Path(), false, ctm); },
+        clipText(t, ctm) { const m2 = [...ctm]; stack.push({ kind: 'clip', bounds: null, mask: true, replay: (d) => d.clipPath(new mupdf.Path(), false, m2) }); if (cur) cur.draw.clipPath(new mupdf.Path(), false, ctm); },
+        clipStrokeText(t, ss, ctm) { const m2 = [...ctm]; stack.push({ kind: 'clip', bounds: null, mask: true, replay: (d) => d.clipPath(new mupdf.Path(), false, m2) }); if (cur) cur.draw.clipPath(new mupdf.Path(), false, ctm); },
         popClip() { popKind('clip'); if (cur) cur.draw.popClip(); },
         beginMask(a, l, cs, c) { stack.push({ kind: 'clip', bounds: null, mask: true }); L().draw.beginMask(a, l, cs, c); },
         endMask() { if (cur) cur.draw.endMask(); },
@@ -239,7 +256,7 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
         ignoreText() {},
         fillShade(sh, ctm, alpha) { D().fillShade(sh, ctm, alpha); },
         fillImageMask(img, ctm, cs, color, alpha) { D().fillImageMask(img, ctm, cs, color, alpha); },
-        beginGroup(a, cs, iso, kn, bm, al) { stack.push({ kind: 'group', replay: (d) => d.beginGroup(a, cs, iso, kn, bm, al) }); if (cur) cur.draw.beginGroup(a, cs, iso, kn, bm, al); },
+        beginGroup(a, cs, iso, kn, bm, al) { const box = [...a]; stack.push({ kind: 'group', replay: (d) => d.beginGroup(box, mupdf.ColorSpace.DeviceRGB, iso, kn, bm, al) /* the callback's colour space is MuPDF's and freed after the call */ }); if (cur) cur.draw.beginGroup(a, cs, iso, kn, bm, al); },
         endGroup() { popKind('group'); if (cur) cur.draw.endGroup(); },
         beginTile(a, v, xs, ys, ctm, idn, did) { tileDepth++; return L().draw.beginTile(a, v, xs, ys, ctm, idn, did); }, endTile() { tileDepth--; if (cur) cur.draw.endTile(); },
         beginLayer(n) { if (cur) cur.draw.beginLayer(n); }, endLayer() { if (cur) cur.draw.endLayer(); },
@@ -263,7 +280,7 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
         const small = e.bounds.width * e.bounds.height < A * 0.01 && e.meta?.kind === 'ellipse';
         if (cov < (small ? 0.03 : 0.15)) return;
         const below = layers.filter((l) => l.at <= i).sort((a, b) => b.at - a.at)[0] || L();
-        const dd = new mupdf.DrawDevice(mupdf.Matrix.identity, below.pix); dd.fillPath(e._draw.pth, e._draw.eo, e._draw.ctm, e._draw.cs, e._draw.color, e._draw.alpha); dd.close();
+        const dd = new mupdf.DrawDevice(mupdf.Matrix.identity, below.pix); dd.fillPath(e._draw.pth, e._draw.eo, e._draw.ctm, mupdf.ColorSpace.DeviceRGB, e._draw.rgb, e._draw.alpha); dd.close();
         below.used = true; demoted.add(i); stats.shapesPromoted--;
       });
       if (demoted.size) { for (const l of layers) l.at -= [...demoted].filter((i) => i < l.at).length; pageEls.splice(0, pageEls.length, ...pageEls.filter((e, i) => !demoted.has(i))); }
@@ -271,13 +288,14 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
       const used = layers.filter((l) => l.used).sort((a, b) => a.at - b.at);
       const bottom = used.find((l) => l.at === 0);
       if (bottom) await writeFile(path.join(out, `artwork-${p}.png`), bottom.pix.asPNG());
-      else { const blank = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, pageDev, true); blank.clear(); await writeFile(path.join(out, `artwork-${p}.png`), blank.asPNG()); }
+      else { const blank = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, pageDev, true); blank.clear(); await writeFile(path.join(out, `artwork-${p}.png`), blank.asPNG()); blank.destroy(); }
       let inserted = 0;
       for (const [k, l] of used.filter((l) => l !== bottom).entries()) {
         const asset = `artwork-${p}-${k + 1}.png`; await writeFile(path.join(out, asset), l.pix.asPNG());
         pageEls.splice(l.at + inserted++, 0, el({ id: `el_art_${p}_${k + 1}`, type: 'vector', name: 'Artwork', artboardId: p, bounds: { x: 0, y: 0, width: W, height: H }, asset, editable: false, locked: true, role: 'background', meta: { collapsedGroup: true, layer: k + 1 } }));
       }
       stats.artworkLayers = (bottom ? 1 : 0) + inserted;
+      for (const l of layers) { try { l.pix.destroy(); } catch { /* already freed */ } } // every layer pixmap, used or not (devices were closed by dev.close())
       artworkOk = true;
     } catch (e) {
       warnings.push(`artwork layer fell back to the full reference render (${e.message})`);

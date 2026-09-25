@@ -11,6 +11,7 @@ import express from 'express';
 import multer from 'multer';
 import { mkdir, rename, rm, copyFile, readdir, readFile, writeFile, stat, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { fork } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ingest } from './ingest.mjs';
@@ -56,6 +57,20 @@ app.get('/api/samples', async (req, res) => {
   try { res.json((await readdir(SAMPLES)).filter((f) => /\.(ai|pdf)$/i.test(f))); } catch { res.json([]); }
 });
 
+/** Run ingest in its own process (see ingest-child.mjs); the finished scene is read back from the bundle folder. */
+function ingestInChild(src, outDir, { classify = true, name = null, onStep = () => {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = fork(path.join(ROOT, 'server', 'ingest-child.mjs'), [src, outDir, name || '', String(classify)], { execArgv: ['--max-old-space-size=4096'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+    let result = null, failure = null;
+    child.on('message', (m) => { if (m.step) onStep(m.step); else if (m.done) result = m; else if (m.error) failure = m; });
+    child.on('error', reject);
+    child.on('exit', async (code, signal) => {
+      if (failure) return reject(Object.assign(new Error(failure.error), { stack: failure.stack }));
+      if (!result) return reject(new Error(signal ? `processing was stopped (${signal})` : `processing crashed (exit ${code}); the file may be too large for this server`));
+      try { resolve({ scene: JSON.parse(await readFile(path.join(outDir, 'scene.json'), 'utf8')), steps: result.steps, needsVision: result.needsVision }); } catch (e) { reject(e); }
+    });
+  });
+}
 app.post('/api/ingest', upload.single('file'), async (req, res) => {
   const sample = req.body?.sample ? path.basename(String(req.body.sample)) : null;
   const name = req.file?.originalname || sample;
@@ -69,7 +84,7 @@ app.post('/api/ingest', upload.single('file'), async (req, res) => {
   try {
     if (req.file) await rename(req.file.path, src); else await copyFile(path.join(SAMPLES, sample), src);
     job.status = 'running';
-    const { scene, steps } = await ingest(src, path.join(BUNDLES, id), { classify: req.body?.classify !== 'false', name: path.basename(name, path.extname(name)), onStep: (s) => { job.step = s; } });
+    const { scene, steps } = await ingestInChild(src, path.join(BUNDLES, id), { classify: req.body?.classify !== 'false', name: path.basename(name, path.extname(name)), onStep: (s) => { job.step = s; } });
     // Bookkeeping: grade the upload, and retire earlier uploads of the same file (they stay on disk, hidden from the list).
     const grade = readiness(scene, scene.ingest?.stats || {});
     const earlier = (await listBundles(BUNDLES)).filter((b) => b.id !== id && b.sourceFile === name && !b.variantOf);

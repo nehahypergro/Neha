@@ -11,6 +11,9 @@ export const isItalic = (s) => /italic|oblique/i.test(s || '');
 export const extraFallbacks = [];
 const fallbackStack = () => [...extraFallbacks.map((f) => `"${f}"`), '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'].join(', ');
 export const fontFamilyCss = (fam) => (fam ? `"${fam}", ${fallbackStack()}` : fallbackStack());
+/** Multi-page files: an element belongs to one artboard; painters and the stage only show the active one. */
+export const pageOf = (scene) => scene.document?.activeArtboard ?? 0;
+export const onPage = (scene, e) => (e.artboardId ?? 0) === pageOf(scene);
 export const lineHeightOf = (t) => t.lineHeight || t.fontSize * 1.2;
 // Rebuilt (vision) text hides the outlined original behind a flat cover; pad it so glyph edges never peek out.
 export const coverPad = (t) => Math.max(4, Math.round((t?.fontSize || 16) * 0.12));
@@ -94,7 +97,7 @@ export async function renderToCanvas(scene, assets, scale = 2) {
   const W = scene.document.width, H = scene.document.height;
   const c = document.createElement('canvas'); c.width = Math.round(W * scale); c.height = Math.round(H * scale);
   const ctx = c.getContext('2d'); ctx.scale(scale, scale); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-  const els = scene.elements.filter((e) => e.type !== 'group' && e.visible).sort((a, b) => a.zIndex - b.zIndex);
+  const els = scene.elements.filter((e) => e.type !== 'group' && e.visible && onPage(scene, e)).sort((a, b) => a.zIndex - b.zIndex);
   for (const e of els) {
     const { x, y, width: w, height: h } = e.bounds; ctx.save(); ctx.globalAlpha = e.opacity ?? 1;
     if (e.transform?.rotation) { ctx.translate(x + w / 2, y + h / 2); ctx.rotate(-e.transform.rotation * Math.PI / 180); ctx.translate(-(x + w / 2), -(y + h / 2)); }
@@ -111,7 +114,7 @@ export function toSvg(scene, assets, imgData = {}) {
   const W = scene.document.width, H = scene.document.height;
   const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
   const measure = document.createElement('canvas').getContext('2d');
-  const parts = scene.elements.filter((e) => e.type !== 'group' && e.visible).sort((a, b) => a.zIndex - b.zIndex).map((e) => {
+  const parts = scene.elements.filter((e) => e.type !== 'group' && e.visible && onPage(scene, e)).sort((a, b) => a.zIndex - b.zIndex).map((e) => {
     const { x, y, width: w, height: h } = e.bounds;
     const rot = e.transform?.rotation ? ` transform="rotate(${-e.transform.rotation} ${x + w / 2} ${y + h / 2})"` : '', op = e.opacity !== 1 ? ` opacity="${e.opacity}"` : '';
     if (e.type !== 'text') {

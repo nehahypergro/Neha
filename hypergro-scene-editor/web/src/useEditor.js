@@ -28,6 +28,7 @@ function reducer(s, a) {
     case 'undo': { const p = s.undo[s.undo.length - 1]; if (!p) return s; return { ...s, undo: s.undo.slice(0, -1), redo: [...s.redo, { scene: s.scene, label: p.label, at: p.at, items: p.items }], scene: p.scene }; }
     case 'redo': { const n = s.redo[s.redo.length - 1]; if (!n) return s; return { ...s, redo: s.redo.slice(0, -1), undo: [...s.undo, { scene: s.scene, label: n.label, at: n.at, items: n.items }], scene: n.scene }; }
     case 'undoTo': { let st = s; while (st.undo.length > a.depth) st = reducer(st, { type: 'undo' }); return st; }
+    case 'page': return s.scene ? { ...s, scene: { ...s.scene, document: { ...s.scene.document, activeArtboard: a.page } } } : s; // which artboard is on screen; not an edit, so no history
     case 'asset': return { ...s, assets: { ...s.assets, [a.path]: a.url } };
     default: return s;
   }

@@ -239,7 +239,7 @@ export default function App() {
         if (d.kind === 'guide') { const pos = Math.round(d.axis === 'x' ? px : py); d.pos = pos; d.inside = d.axis === 'x' ? px >= 0 && px <= w : py >= 0 && py <= h; setUserGuides((g) => { const n = [...g]; n[d.index] = { axis: d.axis, pos }; return n; }); return; }
         if (!d.moved && Math.abs(ev.clientX - d.sx) < 4 && Math.abs(ev.clientY - d.sy) < 4) return; d.moved = true;
         const box = { x: Math.min(d.x0, px), y: Math.min(d.y0, py), width: Math.abs(px - d.x0), height: Math.abs(py - d.y0) }; setMarquee(box);
-        const hit = sc.elements.filter((e) => e.type !== 'group' && e.visible && !e.locked && !e.meta?.collapsedGroup && e.role !== 'background' && e.bounds.x < box.x + box.width && e.bounds.x + e.bounds.width > box.x && e.bounds.y < box.y + box.height && e.bounds.y + e.bounds.height > box.y).map((e) => e.id);
+        const hit = sc.elements.filter((e) => e.type !== 'group' && e.visible && !e.locked && !e.meta?.collapsedGroup && e.role !== 'background' && (e.artboardId ?? 0) === (sc.document.activeArtboard ?? 0) && e.bounds.x < box.x + box.width && e.bounds.x + e.bounds.width > box.x && e.bounds.y < box.y + box.height && e.bounds.y + e.bounds.height > box.y).map((e) => e.id);
         setSel(d.add ? [...new Set([...d.base, ...hit])] : hit); return;
       }
       if (d.kind === 'rotate') {
@@ -441,7 +441,8 @@ export default function App() {
     copy: (ids) => { const n = E.copyElements(sceneRef.current, ids, edRef.current.assets); if (n) { pasteCount.current = 0; setToast(`Copied ${n > 1 ? n + ' items' : '1 item'}. Paste with ${/Mac/.test(navigator.platform) ? '⌘' : 'Ctrl'} V, here or in another creative.`, 3500); } },
     cut: (ids) => { const sc = sceneRef.current; const free = E.unlocked(sc, ids).map((e) => e.id); if (!free.length) return; E.copyElements(sc, free, edRef.current.assets); pasteCount.current = 0; ctlRef.current.remove(free); },
     paste: () => { const sc = sceneRef.current; const clip = E.readClipboard(); if (!sc || !clip) { setToast('Nothing to paste yet. Select something and copy it first.', 4000); return; } const out = E.pasteElements(sc, clip, ++pasteCount.current); if (!out.ids.length) return; const base = edRef.current.bundleId ? `/bundles/${edRef.current.bundleId}/` : null; out.scene.elements.filter((e) => out.ids.includes(e.id)).forEach((e) => { for (const pth of [e.asset, e.assetSvg]) if (pth && !edRef.current.assets[pth] && clip.assetUrls?.[pth]) dispatch({ type: 'asset', path: pth, url: clip.assetUrls[pth] }); }); dispatch({ type: 'replace', scene: out.scene, label: `Pasted ${out.ids.length > 1 ? out.ids.length + ' items' : '1 item'}` }); setSel(out.ids); },
-    selectAll: () => { const sc = sceneRef.current; if (sc) setSel(sc.elements.filter((e) => e.type !== 'group' && e.visible && !e.locked && !e.meta?.collapsedGroup && e.role !== 'background').map((e) => e.id)); },
+    selectAll: () => { const sc = sceneRef.current; if (sc) setSel(sc.elements.filter((e) => e.type !== 'group' && e.visible && !e.locked && !e.meta?.collapsedGroup && e.role !== 'background' && (e.artboardId ?? 0) === (sc.document.activeArtboard ?? 0)).map((e) => e.id)); },
+    setPage: (i) => { const sc = sceneRef.current; if (!sc) return; const n = sc.document.artboards?.length || 1; dispatch({ type: 'page', page: Math.max(0, Math.min(n - 1, i)) }); setSel([]); setEditing(null); },
     group: (ids) => { const o = E.groupOps(sceneRef.current, ids); if (o.length) ops(o, `Grouped ${o.length} items`); else setToast('Select two or more items to group them. Hold Shift and click, or drag a box around them.', 5000); },
     ungroup: (ids) => { const o = E.ungroupOps(sceneRef.current, ids); if (o.length) ops(o, 'Ungrouped'); },
     align: (ids, how) => { const o = E.alignOps(sceneRef.current, ids, how); if (o.length) ops(o, `Aligned ${o.length > 1 ? o.length + ' items' : sceneRef.current.elements.find((x) => x.id === o[0].id)?.name} ${how}`); },
@@ -544,7 +545,7 @@ export default function App() {
               </div>
             </div>
           </div>
-          <BottomBar scene={scene} issues={issues} W={W} H={H} zoom={zoom} zoomMode={zoomMode} showOriginal={showOriginal} hasReference={!!referenceUrl} rulers={rulers} guideCount={userGuides.length} ctl={ctl} />
+          <BottomBar scene={scene} issues={issues} W={W} H={H} zoom={zoom} zoomMode={zoomMode} showOriginal={showOriginal} hasReference={!!referenceUrl} rulers={rulers} guideCount={userGuides.length} page={scene?.document.activeArtboard ?? 0} pages={scene?.document.artboards?.length || 1} ctl={ctl} />
         </div>
       )}
       {toast && <div className="toast" role="status" key={toast.at}>{toast.text}{toast.action && <button className="btn small toast-action" onClick={() => { setToast(null); toast.action.fn(); }}>{toast.action.label}</button>}<button className="linkbtn" onClick={() => setToast(null)}>Dismiss</button></div>}
