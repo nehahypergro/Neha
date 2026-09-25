@@ -131,7 +131,8 @@ export class FontLibrary {
     if (!this.embeddedDir) return null; buffer = realignSfnt(buffer); const p = parseFont(buffer); if (!p.family) return null;
     tidyNames(p);
     const list = await this.scan(); const norm = (s) => String(s || '').toLowerCase().replace(/[\s_-]+/g, '');
-    if (list.some((f) => !f.subset && !f.error && (norm(f.postScriptName) === norm(postScriptName) || norm(f.postScriptName) === norm(p.postScriptName)))) return null;
+    // A full font of the same name on file does not make the file's own cut redundant: the browser uses the file's glyphs for
+    // the letters it has (exact look) and the full font for anything new. Only a subset already stored is skipped.
     const file = (p.postScriptName || postScriptName).replace(/[^\w.-]+/g, '-') + '.ttf';
     await writeFile(path.join(this.embeddedDir, file), buffer); this.stamp = 0;
     return { file, ...p, subset: true, style: STYLE_WORDS(p.weight, p.italic) };

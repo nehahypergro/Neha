@@ -169,7 +169,7 @@ app.post('/api/fontlib', upload.single('file'), async (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
   finally { unlink(req.file.path).catch(() => {}); }
 });
-app.get('/api/fontlib/file/:file', async (req, res) => { const f = req.params.file; if (!/^[\w.-]+\.(ttf|otf|ttc)$/i.test(f)) return res.status(400).end(); const entry = (await library.scan()).find((x) => x.file === f); if (!entry) return res.status(404).end(); res.type(f.endsWith('.otf') ? 'font/otf' : 'font/ttf').set('Cache-Control', 'public, max-age=86400').sendFile(library.pathOf(entry), (e) => { if (e) res.status(404).end(); }); });
+app.get('/api/fontlib/file/:file', async (req, res) => { const f = req.params.file; if (!/^[\w.-]+\.(ttf|otf|ttc)$/i.test(f)) return res.status(400).end(); const wantSubset = req.query.subset === '1'; const all = (await library.scan()).filter((x) => x.file === f); const entry = all.find((x) => !!x.subset === wantSubset) || all[0]; if (!entry) return res.status(404).end(); /* a library font and a font pulled from a file can share a name */ res.type(f.endsWith('.otf') ? 'font/otf' : 'font/ttf').set('Cache-Control', 'public, max-age=86400').sendFile(library.pathOf(entry), (e) => { if (e) res.status(404).end(); }); });
 // ---- language versions: translate every editable line of a creative in one call
 app.post('/api/translate', async (req, res) => {
   const { scene, language } = req.body || {}; if (!scene || !language) return res.status(400).json({ error: 'scene and language required' });

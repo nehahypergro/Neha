@@ -8,23 +8,26 @@ export const libraryHas = (family) => !!family && families.has(family.toLowerCas
 export const libraryHasFull = (family) => !!family && fullFamilies.has(family.toLowerCase());
 export const legacyFont = (family) => (family ? fonts.find((f) => !f.error && f.legacy && [f.family, f.fullName, f.postScriptName].some((n) => n && n.toLowerCase() === family.toLowerCase())) || null : null);
 
+let readyResolve; export const libraryReady = new Promise((r) => { readyResolve = r; }); // settles after the first scan, so nobody asks Google for a font the team already has
 export async function loadFontLibrary() {
   try { fonts = await (await fetch('/api/fontlib')).json(); } catch { fonts = []; }
   families.clear(); fullFamilies.clear();
   const rules = [];
-  for (const f of fonts) {
+  for (const f of [...fonts].sort((a, b) => (a.subset ? 1 : 0) - (b.subset ? 1 : 0))) { // full fonts first, subsets last: the later rule wins for the letters it covers
     if (f.error) continue;
     const names = [...new Set([f.family, f.fullName, f.postScriptName].filter(Boolean))];
     for (const name of names) {
       families.add(name.toLowerCase()); if (!f.subset) fullFamilies.add(name.toLowerCase());
+      // a subset whose letter coverage could not be read would shadow the full font for every letter: leave it out
+      if (f.subset && !f.unicodeRange && fonts.some((g) => !g.subset && !g.error && g.family === f.family)) continue;
       // A partial font only answers for the letters it really has; the browser takes every other letter from the full family (or the fallback).
-      rules.push(`@font-face{font-family:"${name.replace(/"/g, '')}";src:url("/api/fontlib/file/${encodeURIComponent(f.file)}");font-weight:${f.weight || 400};font-style:${f.italic ? 'italic' : 'normal'};font-display:block${f.subset && f.unicodeRange ? `;unicode-range:${f.unicodeRange}` : ''}}`);
+      rules.push(`@font-face{font-family:"${name.replace(/"/g, '')}";src:url("/api/fontlib/file/${encodeURIComponent(f.file)}${f.subset ? '?subset=1' : ''}");font-weight:${f.weight || 400};font-style:${f.italic ? 'italic' : 'normal'};font-display:block${f.subset && f.unicodeRange ? `;unicode-range:${f.unicodeRange}` : ''}}`);
     }
   }
   if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'hg-fontlib'; document.head.appendChild(styleEl); }
   styleEl.textContent = rules.join('\n');
   await Promise.all(fonts.filter((f) => !f.error).map((f) => document.fonts.load(`${f.weight || 400} 16px "${f.family}"`).catch(() => {})));
-  return fonts;
+  readyResolve?.(); return fonts;
 }
 
 /** Point extracted text at a library face when its PostScript name is on file (creatives ingested before the upload). */

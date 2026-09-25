@@ -395,10 +395,13 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
   // leaving every line a little short of the column edge.
   for (const ab of new Set(elements.filter((e) => e.type === 'text').map((e) => e.artboardId))) {
     const lines = elements.filter((e) => e.type === 'text' && e.artboardId === ab && !e.transform?.rotation && !e.text.content.includes('\n'));
-    const bucket = (v) => Math.round(v / 2) * 2; const counts = new Map();
-    for (const e of lines) { const k = bucket(e.bounds.x) + '|' + bucket(e.bounds.x + e.bounds.width); counts.set(k, (counts.get(k) || 0) + 1); }
-    for (const [k, n] of counts) { if (n < 3) continue; const [L, R] = k.split('|').map(Number);
-      for (const e of lines) if (bucket(e.bounds.x) === L && bucket(e.bounds.x + e.bounds.width) === R && e.text.content.trim().includes(' ')) { e.text.align = 'justify'; stats.justifiedLines = (stats.justifiedLines || 0) + 1; } }
+    const TOL = 2.5; const near = (a, b) => Math.abs(a - b) <= TOL;
+    for (const e of lines) {
+      if (e.text.align === 'justify' || !e.text.content.trim().includes(' ')) continue;
+      const L = e.bounds.x, R = e.bounds.x + e.bounds.width;
+      const same = lines.filter((o) => near(o.bounds.x, L) && near(o.bounds.x + o.bounds.width, R) && o.text.content.trim().includes(' '));
+      if (same.length >= 3) for (const o of same) { if (o.text.align !== 'justify') { o.text.align = 'justify'; stats.justifiedLines = (stats.justifiedLines || 0) + 1; } }
+    }
   }
   mergeLetterRuns(elements, stats);
   elements.forEach((e, i) => (e.zIndex = i));

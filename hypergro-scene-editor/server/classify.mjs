@@ -94,6 +94,7 @@ export function applyClassification(scene, out) {
     head.bounds = b; head.text.content = m.content || parts.map((p) => p.text.content).join('\n'); head.text.kind = 'point';
     // Justified copy: most lines end on the same right edge and start on the same left edge. Keep that, or every line
     // comes back a little narrower than the original (the PDF stretched the spaces; we would not).
+    if (parts.some((p) => p.text.align === 'justify')) head.text.align = 'justify'; // the extractor already saw the column edges
     if (parts.length >= 3) { const right = Math.max(...parts.map((p) => p.bounds.x + p.bounds.width)), left = Math.min(...parts.map((p) => p.bounds.x)); const full = parts.slice(0, -1).filter((p) => Math.abs(p.bounds.x + p.bounds.width - right) <= 2 && Math.abs(p.bounds.x - left) <= 2).length; if (full >= 2 && full >= (parts.length - 1) * 0.6) head.text.align = 'justify'; }
     head.text.lineHeight = m.lineHeight || (lines > 1 ? Math.round(((parts[parts.length - 1].bounds.y - head.bounds.y) / (parts.length - 1)) * 100) / 100 : null);
     head.name = head.text.content.replace(/\s+/g, ' ').slice(0, 40);
@@ -104,7 +105,7 @@ export function applyClassification(scene, out) {
     const e = byId.get(c.id); if (!e) continue;
     if (ROLES.includes(c.role)) e.role = c.role;
     if (c.name) e.name = c.name;
-    if (e.text && ALIGN.includes(c.align)) e.text.align = c.align;
+    if (e.text && ALIGN.includes(c.align) && e.text.align !== 'justify') e.text.align = c.align; // measured justification beats the model's guess
   }
   // 3. CTA buttons drawn under labels + semantic groups
   const els = [...byId.values()];

@@ -3,13 +3,14 @@
 // missing family fails silently rather than tripping CORS errors in the console.
 const tried = new Set();
 import { extraFallbacks } from './render.js';
-import { libraryHas, libraryHasFull } from './fontlib.js';
+import { libraryHas, libraryHasFull, libraryReady } from './fontlib.js';
 // Unicode blocks → Google Fonts family that covers them. Loaded on demand when copy in that script appears.
 export const SCRIPT_FONTS = [[/[\u0D00-\u0D7F]/, 'Noto Sans Malayalam'], [/[\u0900-\u097F]/, 'Noto Sans Devanagari'], [/[\u0B80-\u0BFF]/, 'Noto Sans Tamil'], [/[\u0C00-\u0C7F]/, 'Noto Sans Telugu'], [/[\u0C80-\u0CFF]/, 'Noto Sans Kannada'], [/[\u0A80-\u0AFF]/, 'Noto Sans Gujarati'], [/[\u0980-\u09FF]/, 'Noto Sans Bengali'], [/[\u0A00-\u0A7F]/, 'Noto Sans Gurmukhi'], [/[\u0600-\u06FF]/, 'Noto Sans Arabic']];
 export const scriptFontsFor = (text) => SCRIPT_FONTS.filter(([re]) => re.test(text || '')).map(([, f]) => f);
 const loadLink = (href) => new Promise((res, rej) => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; l.onload = () => res(l); l.onerror = () => { l.remove(); rej(new Error('no font: ' + href)); }; document.head.appendChild(l); });
 
 export async function ensureFonts(scene) {
+  await Promise.race([libraryReady, new Promise((r) => setTimeout(r, 4000))]); // the team's fonts first; Google only fills gaps
   const copy = scene.elements.map((e) => e.text?.content || '').join('\n');
   const scripts = scriptFontsFor(copy); scripts.forEach((f) => { if (!extraFallbacks.includes(f)) extraFallbacks.push(f); });
   const fams = [...new Set([...scene.elements.filter((e) => e.text?.fontFamily).map((e) => e.text.fontFamily), ...scripts])];
