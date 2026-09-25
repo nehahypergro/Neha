@@ -371,7 +371,7 @@ select { height: 32px; padding: 0 8px; }
 .crash p { font-size: 15px; line-height: 1.55; color: var(--muted, #5b6472); margin: 0 0 18px; }
 
 /* ---- Canva-style editing: marquee, multi-select box, user guides, rulers, preview, segmented toggles */
-.marquee { position: absolute; z-index: 997; border: 1px solid var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); pointer-events: none; }
+.marquee { position: absolute; z-index: 997; border: 1px solid var(--blue); background: rgba(0, 76, 190, .12); background: color-mix(in srgb, var(--blue) 12%, transparent); pointer-events: none; }
 .multi-box { position: absolute; z-index: 996; border: 1px dashed var(--blue); pointer-events: none; }
 .guide.user { background: #00b8d9; pointer-events: auto; z-index: 995; }
 .guide.user.x { cursor: ew-resize; } .guide.user.y { cursor: ns-resize; }
@@ -382,7 +382,7 @@ select { height: 32px; padding: 0 8px; }
 .ruler-y { top: 0; left: 0; border-right: 1px solid var(--line); cursor: ew-resize; }
 .ruler-corner { position: absolute; top: 0; left: 0; width: 20px; height: 20px; z-index: 13; background: var(--panel); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .tgl { min-width: 32px; height: 32px; border: 1px solid var(--line-2); background: #fff; border-radius: 6px; font-weight: 700; font-size: 14px; cursor: pointer; padding: 0 8px; }
-.tgl.on { background: color-mix(in srgb, var(--blue) 14%, #fff); border-color: var(--blue); color: var(--blue); }
+.tgl.on { background: #e3ebfa; background: color-mix(in srgb, var(--blue) 14%, #fff); border-color: var(--blue); color: var(--blue); }
 .tgl:disabled { opacity: .4; cursor: default; }
 .tgl.i { font-style: italic; } .tgl.u { text-decoration: underline; } .tgl.s { text-decoration: line-through; }
 .size-input { width: 46px; height: 32px; border: none; text-align: center; font-weight: 700; font-size: 14px; background: transparent; -moz-appearance: textfield; }
@@ -412,7 +412,7 @@ select { height: 32px; padding: 0 8px; }
 .bottom .zoom, .bottom .zoom input[type=range] { flex-shrink: 1; min-width: 60px; }
 
 /* mixed-style text + real lists: paragraphs are blocks, list markers live in a gutter so wrapped lines hang under the text */
-.el.text .para { position: relative; min-height: 1lh; }
+.el.text .para { position: relative; min-height: 1.2em; min-height: 1lh; }
 .el.text.list { counter-reset: hgli; }
 .el.text.list .para { padding-left: var(--li, 1.2em); }
 .el.text.list .para::before { position: absolute; left: 0; top: 0; text-align: left; font-weight: inherit; font-style: normal; text-decoration: none; }

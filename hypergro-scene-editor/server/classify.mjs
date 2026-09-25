@@ -92,6 +92,9 @@ export function applyClassification(scene, out) {
     // Merged lines keep their explicit line breaks and do not auto-wrap ('point'): the PDF had no wrapping semantics and
     // browser font metrics differ slightly from MuPDF's, which would otherwise re-wrap lines mid-word.
     head.bounds = b; head.text.content = m.content || parts.map((p) => p.text.content).join('\n'); head.text.kind = 'point';
+    // Justified copy: most lines end on the same right edge and start on the same left edge. Keep that, or every line
+    // comes back a little narrower than the original (the PDF stretched the spaces; we would not).
+    if (parts.length >= 3) { const right = Math.max(...parts.map((p) => p.bounds.x + p.bounds.width)), left = Math.min(...parts.map((p) => p.bounds.x)); const full = parts.slice(0, -1).filter((p) => Math.abs(p.bounds.x + p.bounds.width - right) <= 2 && Math.abs(p.bounds.x - left) <= 2).length; if (full >= 2 && full >= (parts.length - 1) * 0.6) head.text.align = 'justify'; }
     head.text.lineHeight = m.lineHeight || (lines > 1 ? Math.round(((parts[parts.length - 1].bounds.y - head.bounds.y) / (parts.length - 1)) * 100) / 100 : null);
     head.name = head.text.content.replace(/\s+/g, ' ').slice(0, 40);
     parts.slice(1).forEach((p) => byId.delete(p.id));

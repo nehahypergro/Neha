@@ -44,7 +44,7 @@ export const toDataUrl = async (url) => { if (!url || url.startsWith('data:')) r
 function shapePath(ctx, e) {
   const { x, y, width: w, height: h } = e.bounds; ctx.beginPath();
   if (e.meta?.kind === 'ellipse') ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-  else { const r = Math.min(e.meta?.cornerRadius || 0, w / 2, h / 2); if (r > 0) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); }
+  else { const r = Math.min(e.meta?.cornerRadius || 0, w / 2, h / 2); if (r > 0 && ctx.roundRect) ctx.roundRect(x, y, w, h, r); else if (r > 0) { ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); } else ctx.rect(x, y, w, h); }
 }
 export function baselineY(t, i) { const lh = lineHeightOf(t); return i * lh + lh / 2 + t.fontSize * 0.355; }
 /** Wrapped lines for the painters. Each line: { i, x, width, parts: [{ text, x, width, seg }], marker: { text, x } | null }.
@@ -63,13 +63,15 @@ export function layoutText(ctx, e) {
     const rows = [[]]; let used = 0;
     for (const wd of words) { const row = rows[rows.length - 1]; if (row.length && used + wd.width > avail) { rows.push([wd]); used = wd.width + wd.gapWidth; } else { row.push(wd); used += wd.width + wd.gapWidth; } }
     rows.forEach((row, ri) => {
-      const lastRow = ri === rows.length - 1; const justify = t.align === 'justify' && !lastRow && !point && row.length > 1;
+      const lastRow = ri === rows.length - 1; const natural = row.reduce((n, wd) => n + wd.width + wd.gapWidth, 0) - (row[row.length - 1]?.gapWidth || 0);
+      // Wrapped text: every line but the paragraph's last. Explicit lines (from a PDF): every line except the block's last and any short one that ends a paragraph.
+      const justify = t.align === 'justify' && row.length > 1 && (!point ? !lastRow : (paras.length === 1 || !(pi === paras.length - 1)) && natural >= room * 0.7);
       const parts = []; row.forEach((wd, wi) => { const tail = wi < row.length - 1; wd.pieces.forEach((pc, k) => { const gap = tail && k === wd.pieces.length - 1 && !justify ? wd.gap || '' : ''; const prev = parts[parts.length - 1]; if (prev && prev.seg === pc.seg && !justify && !prev.closed) prev.text += pc.text + gap; else parts.push({ text: pc.text + gap, seg: pc.seg, word: wi }); if (gap && wd.gapSeg !== pc.seg) parts[parts.length - 1].closed = false; }); });
       parts.forEach((pt) => { pt.width = measure(pt.text, pt.seg); });
       const textW = parts.reduce((n, pt) => n + pt.width, 0); const lw = justify ? room : textW; const left = x + indent + (t.align === 'center' ? (room - lw) / 2 : t.align === 'right' ? room - lw : 0);
       const extra = justify ? (room - textW) / (row.length - 1) : 0; let at = left; let lastWord = 0;
       for (const pt of parts) { if (justify && pt.word !== lastWord) { at += extra; lastWord = pt.word; } pt.x = at; at += pt.width; }
-      lines.push({ i: lines.length, x: left, width: lw, parts, text: parts.map((pt) => pt.text).join(''), marker: ri === 0 && marks[pi] ? { text: marks[pi], x } : null, simple: parts.length === 1 && !justify && !indent });
+      lines.push({ i: lines.length, x: left, width: lw, parts, justified: justify, text: parts.map((pt) => pt.text).join(''), marker: ri === 0 && marks[pi] ? { text: marks[pi], x } : null, simple: parts.length === 1 && !justify && !indent });
     });
   });
   setFont(null); return lines;

@@ -1,7 +1,7 @@
 import React from 'react';
 import { cropCss } from '../lib/edit.js';
 import { paragraphs, toHtml, fromDom, listIndent } from '../lib/rich.js';
-import { onPage, weightOf, isItalic, fontFamilyCss, lineHeightOf, assetUrl, isCssShape, coverPad } from '../lib/render.js';
+import { onPage, layoutText, weightOf, isItalic, fontFamilyCss, lineHeightOf, assetUrl, isCssShape, coverPad } from '../lib/render.js';
 
 const HANDLES = [['nw', 0, 0], ['n', .5, 0], ['ne', 1, 0], ['e', 1, .5], ['se', 1, 1], ['s', .5, 1], ['sw', 0, 1], ['w', 0, .5]];
 const CURSOR = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize' };
@@ -17,6 +17,7 @@ function elStyle(e, url) {
   else Object.assign(st, { backgroundColor: e.fill || '#e6e4de', borderRadius: e.meta?.kind === 'ellipse' ? '50%' : (e.meta?.cornerRadius || 0) + 'px' });
   return st;
 }
+let measureCtx = null; const justifiedFlags = (e) => { if (e.text.align !== 'justify' || e.text.kind !== 'point') return null; try { measureCtx ||= document.createElement('canvas').getContext('2d'); return layoutText(measureCtx, e).map((l) => l.justified); } catch { return null; } };
 let pendingCaret = null;
 const caretFromPoint = (x, y) => { if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y); const p = document.caretPositionFromPoint?.(x, y); if (!p) return null; const r = document.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); return r; };
 const startEditing = (node, text) => {
@@ -55,7 +56,7 @@ export default function Canvas({ scene, W, H, zoom, assets, sel, hover, editing,
                 onPaste={isEditing ? (ev) => { ev.preventDefault(); const txt = (ev.clipboardData || window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, txt); } : undefined}
                 onBlur={isEditing ? ctl.editEnd : undefined}
                 onKeyDown={isEditing ? (ev) => { ev.stopPropagation(); const meta = ev.metaKey || ev.ctrlKey, k = ev.key.toLowerCase(); if (ev.key === 'Escape' || (meta && ev.key === 'Enter')) { ev.preventDefault(); ev.currentTarget.blur(); } else if (meta && !ev.shiftKey && (k === 'b' || k === 'i' || k === 'u')) { ev.preventDefault(); ctl.format({ b: 'bold', i: 'italic', u: 'underline' }[k]); } else if (meta && k === 's') { ev.preventDefault(); ctl.saveNow(); } } : undefined}>
-                {isEditing ? null : isT ? paragraphs(e.text).map((p, pi) => <div key={pi} className={'para' + (p.text.trim() ? '' : ' empty')}>{p.segs.length ? p.segs.map((sg, si) => (sg.bold || sg.italic || sg.underline || sg.strike ? <span key={si} style={{ fontWeight: sg.bold ? 700 : undefined, fontStyle: sg.italic ? 'italic' : undefined, textDecoration: [sg.underline && 'underline', sg.strike && 'line-through'].filter(Boolean).join(' ') || undefined }}>{sg.text}</span> : sg.text)) : <br />}</div>) : missing ? `${e.name} (image missing)` : ''}
+                {isEditing ? null : isT ? (() => { const jf = justifiedFlags(e); return paragraphs(e.text).map((p, pi) => <div key={pi} className={'para' + (p.text.trim() ? '' : ' empty')} style={jf ? { textAlignLast: jf[pi] ? 'justify' : 'auto' } : undefined}>{p.segs.length ? p.segs.map((sg, si) => (sg.bold || sg.italic || sg.underline || sg.strike ? <span key={si} style={{ fontWeight: sg.bold ? 700 : undefined, fontStyle: sg.italic ? 'italic' : undefined, textDecoration: [sg.underline && 'underline', sg.strike && 'line-through'].filter(Boolean).join(' ') || undefined }}>{sg.text}</span> : sg.text)) : <br />}</div>); })() : missing ? `${e.name} (image missing)` : ''}
               </div>
             );
           })}

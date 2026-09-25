@@ -357,6 +357,9 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
       const mixed = ln.chars.some((k) => Math.abs(k.size - size) > 0.01 || k.font.getName?.() !== name);
       const eid = nid('txt'); stats.textRuns++;
       let b = rect(ln.bbox, bx0, by0);
+      // Tight to the ink: MuPDF's line box also spans stretched word spaces and padding spaces (a hanging indent typed as
+      // spaces), which made such lines look up to 30% wider than their words and pushed them to the wrong edge.
+      if (glyphs.length && !ln.chars[0].q?.some?.(() => false)) { const gx0 = Math.min(...glyphs.map((k) => k.x0)), gx1 = Math.max(...glyphs.map((k) => k.x1)); if (isFinite(gx0) && gx1 > gx0) { b = { ...b, x: r1(gx0 - bx0), width: r1(gx1 - gx0) }; } }
       // Rotated text (a tilted tagline, letters on an arc): the quads carry the angle; keep an unrotated box + rotation.
       let rotation = 0; const q0 = ln.chars[0].q;
       if (q0) { const ang = Math.atan2(q0[3] - q0[1], q0[2] - q0[0]); const deg = ang * 180 / Math.PI;
@@ -370,6 +373,16 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
       elements.push(el({ id: eid, type: 'text', name: text.slice(0, 40), artboardId: p, bounds: b, fill, ...(rotation ? { transform: { rotation, scaleX: 1, scaleY: 1 } } : {}),
         text: { content: text, fontFamily: family, fontStyle: style, postScriptName: ps, fontSize: r1(size), lineHeight: null, letterSpacing, align, kind: 'point', mixed, ...(legacy ? { encoding: 'legacy' } : {}) }, ...(legacy ? { meta: { legacyFont: family, legacyScript: legacy.legacyScript } } : {}) }));
     }
+  }
+  // Justified columns: on a page where three or more lines share the same left AND right edge (±2 px), those lines were
+  // justified in the source. Flag them, so the editor and the downloads stretch their spaces the same way instead of
+  // leaving every line a little short of the column edge.
+  for (const ab of new Set(elements.filter((e) => e.type === 'text').map((e) => e.artboardId))) {
+    const lines = elements.filter((e) => e.type === 'text' && e.artboardId === ab && !e.transform?.rotation && !e.text.content.includes('\n'));
+    const bucket = (v) => Math.round(v / 2) * 2; const counts = new Map();
+    for (const e of lines) { const k = bucket(e.bounds.x) + '|' + bucket(e.bounds.x + e.bounds.width); counts.set(k, (counts.get(k) || 0) + 1); }
+    for (const [k, n] of counts) { if (n < 3) continue; const [L, R] = k.split('|').map(Number);
+      for (const e of lines) if (bucket(e.bounds.x) === L && bucket(e.bounds.x + e.bounds.width) === R && e.text.content.trim().includes(' ')) { e.text.align = 'justify'; stats.justifiedLines = (stats.justifiedLines || 0) + 1; } }
   }
   mergeLetterRuns(elements, stats);
   elements.forEach((e, i) => (e.zIndex = i));
