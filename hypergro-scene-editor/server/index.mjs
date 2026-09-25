@@ -87,14 +87,21 @@ app.post('/api/ingest', upload.single('file'), async (req, res) => {
     const { scene, steps } = await ingestInChild(src, path.join(BUNDLES, id), { classify: req.body?.classify !== 'false', name: path.basename(name, path.extname(name)), onStep: (s) => { job.step = s; } });
     // Bookkeeping: grade the upload, and retire earlier uploads of the same file (they stay on disk, hidden from the list).
     const grade = readiness(scene, scene.ingest?.stats || {});
-    const earlier = (await listBundles(BUNDLES)).filter((b) => b.id !== id && b.sourceFile === name && !b.variantOf);
+    // The same file again replaces the earlier upload. "Statement Template.ai", "Statement-Template.ai" and "statement template (1).ai"
+    // are the same file to a person, so compare a normalised name, not the exact string.
+    const sameFile = (a, b) => String(a || '').toLowerCase().replace(/\.(ai|pdf)$/, '').replace(/\s*\(\d+\)$/, '').replace(/[^a-z0-9]+/g, '') === String(b || '').toLowerCase().replace(/\.(ai|pdf)$/, '').replace(/\s*\(\d+\)$/, '').replace(/[^a-z0-9]+/g, '');
+    const all = await listBundles(BUNDLES);
+    const earlier = all.filter((b) => b.id !== id && sameFile(b.sourceFile, name) && !b.variantOf);
     const inherited = earlier.find((b) => b.name && b.name !== b.documentName)?.name || null;
+    // A different file with the same title gets a number, so two cards never carry the same name.
+    let title = inherited || scene.document.name; const taken = new Set(all.filter((b) => b.id !== id && !earlier.includes(b) && !b.supersededBy && !b.archived).map((b) => b.name));
+    if (taken.has(title)) { let k = 2; while (taken.has(`${title} (${k})`)) k++; title = `${title} (${k})`; }
     for (const b of earlier) await writeMeta(path.join(BUNDLES, b.id), { supersededBy: id });
-    await writeMeta(path.join(BUNDLES, id), { sourceFile: name, name: inherited || scene.document.name, readiness: grade, replaces: earlier.map((b) => b.id), createdAt: Date.now() });
+    await writeMeta(path.join(BUNDLES, id), { sourceFile: name, name: title, readiness: grade, replaces: earlier.map((b) => b.id), createdAt: Date.now() });
     await appendEvents(path.join(BUNDLES, id), [{ at: Date.now(), by: String(req.body?.by || 'Someone'), label: earlier.length ? `Uploaded a new version of ${name}` : `Uploaded ${name}` }]);
     if (cdnEnabled()) { job.step = 'store'; await storeOriginal(id, src, name); await syncBundle(BUNDLES, id); syncFonts(FONTS_DIR, licensedFont).catch(() => {}); const m = JSON.parse(await readFile(path.join(BUNDLES, id, 'cdn.json'), 'utf8').catch(() => '{}')); const r = { failed: (await readdir(path.join(BUNDLES, id))).filter((f) => /\.(png|jpe?g)$/i.test(f) && !m[f]).length }; if (r.failed) scene.warnings = [...(scene.warnings || []), `${r.failed} image${r.failed > 1 ? 's' : ''} could not be copied to the CDN; they are kept on this server only`]; }
     job.status = 'done'; job.step = 'done';
-    job.result = { bundle: `/bundles/${id}/`, name: inherited || scene.document.name, elements: scene.elements.length, warnings: scene.warnings, classifier: steps.classifier, needsVision: !!scene.ingest?.needsVision, readiness: grade, replaced: earlier.map((b) => b.id) };
+    job.result = { bundle: `/bundles/${id}/`, name: title, elements: scene.elements.length, warnings: scene.warnings, classifier: steps.classifier, needsVision: !!scene.ingest?.needsVision, readiness: grade, replaced: earlier.map((b) => b.id) };
   } catch (e) { job.status = 'failed'; job.step = 'failed'; job.error = e.message; reportError({ where: 'processing an uploaded file', message: e.message, stack: e.stack, file: name, job: id, user: String(req.body?.by || '') }); }
   finally { await rm(src, { force: true }); }
 });
