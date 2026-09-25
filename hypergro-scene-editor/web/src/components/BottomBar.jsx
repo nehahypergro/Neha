@@ -1,15 +1,8 @@
-import React, { useState } from 'react';
-import ReadyCard, { friendlyIssues } from './ReadyCard.jsx';
+import React from 'react';
 
 export default function BottomBar({ scene, issues, W, H, zoom, zoomMode, showOriginal, hasReference, rulers, guideCount = 0, page = 0, pages = 1, ctl }) {
-  const [open, setOpen] = useState(false);
-  const rows = friendlyIssues(issues);
   return (
     <footer className="bottom">
-      <span className="menu-wrap">
-        <button className={'ready-pill' + (rows.length ? ' warn' : ' ok')} onClick={() => setOpen(!open)} aria-expanded={open}>{rows.length ? `⚠ ${rows.length} thing${rows.length > 1 ? 's' : ''} to look at` : '✓ Ready to publish'}</button>
-        {open && <><div className="menu-backdrop" onMouseDown={() => setOpen(false)} /><div className="menu up left plain"><ReadyCard issues={issues} scene={scene} ctl={ctl} /></div></>}
-      </span>
       {hasReference && <label className="check"><input type="checkbox" checked={showOriginal} onChange={ctl.toggleOriginal} /> Show original</label>}
       <button className="btn ghost small" onClick={ctl.resetAll} title="Put everything back as it was in the uploaded file">↺ Start over</button>
       <label className="check" title="Rulers in pixels. Drag out of a ruler to pull a guide; things snap to guides. (⇧R)"><input type="checkbox" checked={!!rulers} onChange={ctl.toggleRulers} /> Rulers</label>
