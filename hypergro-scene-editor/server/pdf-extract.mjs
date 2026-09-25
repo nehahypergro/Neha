@@ -211,6 +211,10 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
       const safe = (fn) => { try { return fn(); } catch { return null; } };
       // Every path handed to a callback belongs to MuPDF and is freed when the callback returns. Anything replayed later
       // (clips onto a new layer, a demoted shape) must use our own copy, or it reads freed memory and corrupts the heap.
+      // mupdf.js 1.28 hands shadings and images to callbacks WITHOUT taking a reference, yet registers the wrapper for
+      // finalisation: when the GC later collects it, a reference the JS side never owned is dropped and the document's
+      // own shading/image is freed while still in use ('Unexpected mesh type', random crashes in later calls). Cancel that.
+      const disown = (o) => { try { o?.constructor?._finalizer?.unregister(o); } catch { /* not a Userdata */ } return o; };
       const own = (pth) => { const c = new mupdf.Path(); pth.walk({ moveTo: (x, y) => c.moveTo(x, y), lineTo: (x, y) => c.lineTo(x, y), curveTo: (a1, b1, c1, d1, e1, f1) => c.curveTo(a1, b1, c1, d1, e1, f1), closePath: () => c.closePath() }); return c; };
       const dev = new mupdf.Device({
         fillPath(pth, eo, ctm, cs, color, alpha) {
@@ -233,7 +237,7 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
           }
           D().fillPath(pth, eo, ctm, cs, color, alpha);
         },
-        fillImage(image, ctm, alpha) {
+        fillImage(image, ctm, alpha) { disown(image);
           stats.images++;
           const bb = unitRect(ctm);
           if (clipOk(bb) && alpha >= 0.5 && inside(bb, pageDev, 2) && (bb[2] - bb[0]) / scale >= 8 && (bb[3] - bb[1]) / scale >= 8) {
@@ -252,7 +256,7 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
         strokePath(pth, ss, ctm, cs, color, alpha) { stats.paths++; D().strokePath(pth, ss, ctm, cs, color, alpha); },
         clipPath(pth, eo, ctm) { const info = safe(() => inspectPath(pth, ctm)); const mine = own(pth), m2 = [...ctm]; stack.push({ kind: 'clip', bounds: info?.kind === 'rect' ? info.bounds : (info ? info.bounds : null), mask: false, replay: (d) => d.clipPath(mine, eo, m2) }); if (cur) cur.draw.clipPath(pth, eo, ctm); },
         clipStrokePath(pth, ss, ctm) { const mine = own(pth), m2 = [...ctm]; stack.push({ kind: 'clip', bounds: null, mask: false, replay: (d) => d.clipPath(mine, false, m2) /* stroke state is MuPDF's; a fill clip of the same outline is the safe approximation */ }); if (cur) cur.draw.clipStrokePath(pth, ss, ctm); },
-        clipImageMask(img, ctm) { stack.push({ kind: 'clip', bounds: null, mask: true }); L().draw.clipImageMask(img, ctm); },
+        clipImageMask(img, ctm) { disown(img); stack.push({ kind: 'clip', bounds: null, mask: true }); L().draw.clipImageMask(img, ctm); },
         clipText(t, ctm) { const m2 = [...ctm]; stack.push({ kind: 'clip', bounds: null, mask: true, replay: (d) => d.clipPath(new mupdf.Path(), false, m2) }); if (cur) cur.draw.clipPath(new mupdf.Path(), false, ctm); },
         clipStrokeText(t, ss, ctm) { const m2 = [...ctm]; stack.push({ kind: 'clip', bounds: null, mask: true, replay: (d) => d.clipPath(new mupdf.Path(), false, m2) }); if (cur) cur.draw.clipPath(new mupdf.Path(), false, ctm); },
         popClip() { popKind('clip'); if (cur) cur.draw.popClip(); },
@@ -263,13 +267,13 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
         fillText(text, ctm, cs, color, alpha) { const g = garbledPart(text); if (g) { stats.garbledRuns++; D().fillText(g, ctm, cs, color, alpha); } },
         strokeText(text, ss, ctm, cs, color, alpha) { const g = garbledPart(text); if (g) D().strokeText(g, ss, ctm, cs, color, alpha); },
         ignoreText() {},
-        fillShade(sh, ctm, alpha) { D().fillShade(sh, ctm, alpha); },
-        fillImageMask(img, ctm, cs, color, alpha) { D().fillImageMask(img, ctm, cs, color, alpha); },
+        fillShade(sh, ctm, alpha) { disown(sh); D().fillShade(sh, ctm, alpha); },
+        fillImageMask(img, ctm, cs, color, alpha) { disown(img); D().fillImageMask(img, ctm, cs, color, alpha); },
         beginGroup(a, cs, iso, kn, bm, al) { const box = [...a]; stack.push({ kind: 'group', replay: (d) => d.beginGroup(box, mupdf.ColorSpace.DeviceRGB, iso, kn, bm, al) /* the callback's colour space is MuPDF's and freed after the call */ }); if (cur) cur.draw.beginGroup(a, cs, iso, kn, bm, al); },
         endGroup() { popKind('group'); if (cur) cur.draw.endGroup(); },
         beginTile(a, v, xs, ys, ctm, idn, did) { tileDepth++; return L().draw.beginTile(a, v, xs, ys, ctm, idn, did); }, endTile() { tileDepth--; if (cur) cur.draw.endTile(); },
         beginLayer(n) { if (cur) cur.draw.beginLayer(n); }, endLayer() { if (cur) cur.draw.endLayer(); },
-        close() { for (const l of layers) l.draw.close(); },
+        close() { for (const l of layers) { l.draw.close(); l.closed = true; } },
       });
       page.run(dev, m); dev.close();
       // A promoted shape that later drawing paints over (the white disc behind a logo mark, say) is part of a composite,
@@ -304,10 +308,13 @@ export async function extract(src, out, { scale = null, previewMax = 1400, name 
         pageEls.splice(l.at + inserted++, 0, el({ id: `el_art_${p}_${k + 1}`, type: 'vector', name: 'Artwork', artboardId: p, bounds: { x: 0, y: 0, width: W, height: H }, asset, editable: false, locked: true, role: 'background', meta: { collapsedGroup: true, layer: k + 1 } }));
       }
       stats.artworkLayers = (bottom ? 1 : 0) + inserted;
-      for (const l of layers) { try { l.pix.destroy(); } catch { /* already freed */ } } // every layer pixmap, used or not (devices were closed by dev.close())
+      // A layer opened after the main pass (a demoted shape drawn onto a fresh layer) still has its device open: close it
+      // first. Freeing a pixmap under an open device corrupts MuPDF's state and the next call fails ('Unexpected mesh type').
+      for (const l of layers) { try { if (!l.closed) { l.draw.close(); l.closed = true; } } catch { /* already closed */ } try { l.pix.destroy(); } catch { /* already freed */ } }
       artworkOk = true;
     } catch (e) {
       warnings.push(`artwork layer fell back to the full reference render (${e.message})`);
+      if (process.env.HG_TRACE) console.error('[artwork]', e.stack);
       artboards[p].artwork = `reference-${p}.png`; pageEls.length = 0; stats.shapesPromoted = 0; stats.imagesPromoted = 0;
     }
     elements.push(el({ id: `el_art_${p}`, type: 'vector', name: 'Artwork', artboardId: p, bounds: { x: 0, y: 0, width: W, height: H }, asset: artboards[p].artwork, editable: false, locked: true, role: 'background', meta: { collapsedGroup: true, pathCount: stats.paths, layer: layers[0] || null } }));
