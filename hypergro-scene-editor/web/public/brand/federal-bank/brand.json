@@ -155,7 +155,7 @@
   "logos": [
     {
       "id": "wordmark-primary",
-      "name": "Wordmark · blue",
+      "name": "Wordmark \u00b7 blue",
       "file": "wordmark-primary.svg",
       "kind": "wordmark",
       "on": "light",
@@ -164,7 +164,7 @@
     },
     {
       "id": "wordmark-reversed",
-      "name": "Wordmark · white on Federal Blue",
+      "name": "Wordmark \u00b7 white on Federal Blue",
       "file": "wordmark-reversed.svg",
       "kind": "wordmark",
       "on": "dark",
@@ -172,17 +172,8 @@
       "h": 190
     },
     {
-      "id": "wordmark-on-gold",
-      "name": "Wordmark · on Golden Glow",
-      "file": "wordmark-on-gold.svg",
-      "kind": "wordmark",
-      "on": "orange",
-      "w": 1075,
-      "h": 190
-    },
-    {
       "id": "insignia-blue",
-      "name": "Fortuna Wave · blue",
+      "name": "Fortuna Wave \u00b7 blue",
       "file": "insignia-blue.svg",
       "kind": "insignia",
       "on": "light",
@@ -191,7 +182,7 @@
     },
     {
       "id": "insignia-gold",
-      "name": "Fortuna Wave · Golden Glow (darker images)",
+      "name": "Fortuna Wave \u00b7 Golden Glow (darker images)",
       "file": "insignia-gold.svg",
       "kind": "insignia",
       "on": "dark",
@@ -200,7 +191,7 @@
     },
     {
       "id": "insignia-white",
-      "name": "Fortuna Wave · white",
+      "name": "Fortuna Wave \u00b7 white",
       "file": "insignia-white.svg",
       "kind": "insignia",
       "on": "dark",
@@ -209,7 +200,7 @@
     },
     {
       "id": "insignia-black",
-      "name": "Fortuna Wave · black",
+      "name": "Fortuna Wave \u00b7 black",
       "file": "insignia-black.svg",
       "kind": "insignia",
       "on": "light",
@@ -218,7 +209,7 @@
     },
     {
       "id": "lockup-horizontal",
-      "name": "Lockup · horizontal",
+      "name": "Lockup \u00b7 horizontal",
       "file": "lockup-horizontal.svg",
       "kind": "lockup",
       "on": "light",
@@ -227,7 +218,7 @@
     },
     {
       "id": "lockup-horizontal-reversed",
-      "name": "Lockup · horizontal, white",
+      "name": "Lockup \u00b7 horizontal, white",
       "file": "lockup-horizontal-reversed.svg",
       "kind": "lockup",
       "on": "dark",
@@ -236,7 +227,7 @@
     },
     {
       "id": "lockup-stacked",
-      "name": "Lockup · stacked",
+      "name": "Lockup \u00b7 stacked",
       "file": "lockup-stacked.svg",
       "kind": "lockup",
       "on": "light",
@@ -245,7 +236,7 @@
     },
     {
       "id": "lockup-stacked-reversed",
-      "name": "Lockup · stacked, white",
+      "name": "Lockup \u00b7 stacked, white",
       "file": "lockup-stacked-reversed.svg",
       "kind": "lockup",
       "on": "dark",
