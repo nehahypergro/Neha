@@ -33,7 +33,7 @@ export default function EditorHeader({ kit, name, saveState, exporting, exportTi
           {pop('act', <Activity undo={undo} redo={redo} past={past} versions={versions} user={user} onUser={onUser} ctl={ctl} forceOpen />, 'plain')}
         </span>
         <span className="menu-wrap">
-          <button className="btn ghost" onClick={() => setMenu(menu === 'lang' ? null : 'lang')} aria-expanded={menu === 'lang'}>🌐 Languages{variants.length ? ` · ${variants.length}` : ''}</button>
+          <button className="btn ghost" onClick={() => setMenu(menu === 'lang' ? null : 'lang')} aria-expanded={menu === 'lang'}>🌐 Languages{variants.filter((v) => !isSizeLabel(v.language)).length ? ` · ${variants.filter((v) => !isSizeLabel(v.language)).length}` : ''}</button>
           {pop('lang', <LanguageMenu variants={variants.filter((v) => !isSizeLabel(v.language))} language={isSizeLabel(language) ? null : language} progress={Object.fromEntries(Object.entries(langProgress).filter(([k]) => !isSizeLabel(k)))} ctl={ctl} close={close} />, 'plain')}
         </span>
         <span className="menu-wrap">
