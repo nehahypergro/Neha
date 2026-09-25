@@ -195,12 +195,22 @@ async function cutRegion(outDir, scene, box, fill, index) {
     const pad = Math.max(6, Math.round(4 * s));
     for (let y = Math.max(0, y0 - pad); y < Math.min(H, y1 + pad); y += 2) for (let x = Math.max(0, x0 - pad); x < Math.min(W, x1 + pad); x += 2) { if (x >= x0 && x < x1 && y >= y0 && y < y1) continue; ringTotal++; if (px[(y * W + x) * 4 + 3] > 40) ring++; }
     const baked = ringTotal ? ring / ringTotal > 0.5 : false;
-    if (baked && !fillRgb) continue;
+    // The hole left behind is filled from its own border, blended across the box, so a gradient or a soft vignette
+    // behind the mark continues smoothly (a flat colour showed as a rectangle the moment the logo moved).
+    const border = (x, y) => { const i = (Math.min(W - 1, Math.max(0, x)) * 1 + Math.min(H - 1, Math.max(0, y)) * W) * 4; return [px[i], px[i + 1], px[i + 2], px[i + 3]]; };
+    const patch = (x, y) => { const L = border(x0 - 1, y), R = border(x1, y), T = border(x, y0 - 1), Bt = border(x, y1); const fx = (x - x0 + 0.5) / (x1 - x0), fy = (y - y0 + 0.5) / (y1 - y0);
+      const h = [0, 1, 2, 3].map((c) => L[c] * (1 - fx) + R[c] * fx), v = [0, 1, 2, 3].map((c) => T[c] * (1 - fy) + Bt[c] * fy); const wx = Math.min(fx, 1 - fx), wy = Math.min(fy, 1 - fy); const t = wx + wy > 0 ? wy / (wx + wy) : 0.5; // nearer edge weighs more
+      return [0, 1, 2, 3].map((c) => Math.round(h[c] * t + v[c] * (1 - t))); };
     const op = outPix.getPixels();
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
       const i = (y * W + x) * 4, o = ((y - y0) * rw + (x - x0)) * 4; const sa = px[i + 3] / 255; // premultiplied "over"
       for (let c = 0; c < 4; c++) op[o + c] = Math.min(255, px[i + c] + op[o + c] * (1 - sa));
-      if (fillRgb && baked) { px[i] = fillRgb[0]; px[i + 1] = fillRgb[1]; px[i + 2] = fillRgb[2]; px[i + 3] = 255; } else { px[i] = px[i + 1] = px[i + 2] = px[i + 3] = 0; }
+      if (baked) { const q = patch(x, y);
+        // The lifted image must be only the mark: any pixel that matches the background it sat on becomes transparent
+        // (with a soft edge), so moving the logo does not drag a rectangle of the old background along.
+        const dist = Math.max(Math.abs(op[o] - q[0]), Math.abs(op[o + 1] - q[1]), Math.abs(op[o + 2] - q[2])); const keep = dist <= 24 ? 0 : dist >= 60 ? 1 : (dist - 24) / 36;
+        if (keep < 1) { const a = op[o + 3] * keep; for (let c = 0; c < 3; c++) op[o + c] = Math.round(op[o + c] * keep); op[o + 3] = Math.round(a); }
+        px[i] = q[0]; px[i + 1] = q[1]; px[i + 2] = q[2]; px[i + 3] = q[3]; } else { px[i] = px[i + 1] = px[i + 2] = px[i + 3] = 0; }
     }
     await writeFile(file, pix.asPNG()); cut = true;
   }
