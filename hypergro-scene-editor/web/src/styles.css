@@ -197,7 +197,7 @@ select { height: 32px; padding: 0 8px; }
 .stage-wrap { flex: 1; min-width: 0; min-height: 0; position: relative; display: flex; }
 
 /* contextual toolbar (Canva-style) */
-.ctx { height: 50px; display: flex; align-items: center; gap: 6px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); flex-shrink: 0; overflow-x: auto; white-space: nowrap; position: relative; z-index: 15; }
+.ctx { min-height: 50px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 14px; background: var(--panel); border-bottom: 1px solid var(--line); flex-shrink: 0; overflow: visible; white-space: nowrap; position: relative; z-index: 15; }
 .ctx .hint { color: var(--muted); font-size: 13px; }
 .ctx .hint.strong { color: var(--ink); font-weight: 700; }
 .ctx .grow { flex: 1; }
@@ -406,8 +406,10 @@ select { height: 32px; padding: 0 8px; }
 .preview-mode > header, .preview-mode > .ctx, .preview-mode > .bottom, .preview-mode .side, .preview-mode .assist, .preview-mode .ready-banner, .preview-mode .ehead { display: none !important; }
 .guide.even { background: none; border: 0 dashed var(--hot); }
 .guide.even.x { border-left-width: 1px; } .guide.even.y { border-top-width: 1px; }
-.bottom { overflow-x: auto; }
+/* never clip the bar: the readiness list pops up out of it. Labels stay on one line and the slider gives way instead. */
+.bottom { overflow: visible; }
 .bottom > *, .bottom .check, .bottom .linkbtn { white-space: nowrap; flex-shrink: 0; }
+.bottom .zoom, .bottom .zoom input[type=range] { flex-shrink: 1; min-width: 60px; }
 
 /* mixed-style text + real lists: paragraphs are blocks, list markers live in a gutter so wrapped lines hang under the text */
 .el.text .para { position: relative; min-height: 1lh; }
