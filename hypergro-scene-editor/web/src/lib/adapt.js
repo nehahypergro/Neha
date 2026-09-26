@@ -132,7 +132,7 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
     if (hasPicture) { composition = 'split'; const photoRight = focal[0] >= W / 2; textSide = photoRight ? 'left' : 'right'; const split = Math.round(TW * 0.52);
       picture = photoRight ? { x: split, y: 0, width: TW - split, height: TH } : { x: 0, y: 0, width: split, height: TH }; colW = split - m - Math.round(m * 0.6); colX = photoRight ? m : TW - split + Math.round(m * 0.6); }
     else { composition = 'text-led'; colW = Math.round(TW * 0.7); }
-  } else if (hasPicture) { composition = 'photo-band'; picture = { x: 0, y: story ? safeTop + brandH + gap : 0, width: TW, height: 0 }; /* height set once the copy is measured */ }
+  } else if (hasPicture) { composition = 'photo-band'; picture = { x: 0, y: safeTop + brandH + gap, width: TW, height: 0 }; /* the band starts under the brand row */ /* height set once the copy is measured */ }
   else composition = 'text-led';
 
   // ---- 4. type scale: the headline is set to read at format size and wrap to a few lines; the rest keep their ratio to it
