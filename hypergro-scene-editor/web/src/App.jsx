@@ -23,7 +23,7 @@ import { CropSheet, ResizeSheet, ShortcutsSheet } from './components/EditSheets.
 import { loadFiles, loadZip, loadUrl, readDrop, addAssets } from './lib/bundle.js';
 import { ensureFonts } from './lib/fonts.js';
 import { localEdit } from './lib/localEdit.js';
-import { renderToCanvas, download } from './lib/render.js';
+import { renderToCanvas, download, loadImage, coverPad } from './lib/render.js';
 import { exportFile } from './lib/export.js';
 import { computeIssues, fitFontSize, textFit, safeMargin, forgetFonts } from './lib/issues.js';
 import { snapDelta, unionBounds } from './lib/snap.js';
@@ -379,14 +379,31 @@ export default function App() {
     } catch (e) { setToast(fail(e, 'making the copy'), 9000); return null; }
   }
   // Size adapts: each preset becomes its own linked creative, re-composed for that shape, editable afterwards.
+  // Size adapts: each preset becomes its own linked creative, re-composed for that shape, editable afterwards.
+  async function buildArtComposite(sc, assets) {
+    const ab = sc.document.activeArtboard ?? 0; const layers = sc.elements.filter((e) => e.meta?.collapsedGroup && e.asset && (e.artboardId ?? 0) === ab && e.visible !== false).sort((a, b) => a.zIndex - b.zIndex);
+    if (!layers.length) return null;
+    const imgs = await Promise.all(layers.map((l) => loadImage(assets[l.asset])));
+    const W = sc.document.width, H = sc.document.height; const scale = Math.min(imgs[0].naturalWidth / layers[0].bounds.width, 3600 / Math.max(W, H));
+    const c = document.createElement('canvas'); c.width = Math.round(W * scale); c.height = Math.round(H * scale); const g = c.getContext('2d');
+    imgs.forEach((im, i) => { const l = layers[i]; g.drawImage(im, l.bounds.x * scale, l.bounds.y * scale, l.bounds.width * scale, l.bounds.height * scale); });
+    // outlined text that the rebuilt copy replaces is painted over, so it cannot reappear somewhere else in the adapt
+    for (const e of sc.elements) if (e.type === 'text' && e.meta?.overlay && e.meta.coverFill && (e.artboardId ?? 0) === ab) { const p = coverPad(e.text); g.fillStyle = e.meta.coverFill; g.fillRect((e.bounds.x - p) * scale, (e.bounds.y - p) * scale, (e.bounds.width + 2 * p) * scale, (e.bounds.height + 2 * p) * scale); }
+    return c;
+  }
   async function makeSizes(ids) {
     const a = artRefState.current, sc = sceneRef.current; if (!a?.id || !sc || !ids.length) { setToast('Upload a creative first to make other sizes.'); return; }
     setLangProgress((p) => ({ ...p, ...Object.fromEntries(ids.map((i) => [PRESETS.find((x) => x.id === i).label, 'pending'])) }));
     const made = []; const ctx = document.createElement('canvas').getContext('2d');
-    let ref = null; try { const url = edRef.current.assets[sc.document.artboards?.[sc.document.activeArtboard ?? 0]?.reference]; if (url) { const img = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = url; }); ref = document.createElement('canvas'); const k = Math.min(1, 1200 / img.naturalWidth); ref.width = Math.round(img.naturalWidth * k); ref.height = Math.round(img.naturalHeight * k); ref.getContext('2d').drawImage(img, 0, 0, ref.width, ref.height); } } catch { ref = null; }
+    let art = null, artAsset = null, ref = null;
+    try { art = await buildArtComposite(sc, edRef.current.assets); } catch (e) { report(e, 'reading the artwork for a size adapt'); art = null; }
+    if (art) { try { const blob = await new Promise((r) => art.toBlob(r, 'image/png')); const clean = `adapt-art-${Date.now().toString(36)}.png`; const fd = new FormData(); fd.append('file', blob, clean); fd.append('name', clean); const r = await fetch(`/api/bundles/${a.id}/assets`, { method: 'POST', body: fd }); if (!r.ok) throw new Error('asset ' + r.status); artAsset = 'user/' + clean; dispatch({ type: 'asset', path: artAsset, url: URL.createObjectURL(blob) }); } catch (e) { report(e, 'storing the artwork for a size adapt'); artAsset = null; } }
+    try { const url = edRef.current.assets[sc.document.artboards?.[sc.document.activeArtboard ?? 0]?.reference]; if (url) { const img = await loadImage(url); ref = document.createElement('canvas'); const kk = Math.min(1, 1200 / img.naturalWidth); ref.width = Math.round(img.naturalWidth * kk); ref.height = Math.round(img.naturalHeight * kk); ref.getContext('2d').drawImage(img, 0, 0, ref.width, ref.height); } } catch { ref = null; }
+    // analysis runs on a small copy of the composite; the full one is what the adapt draws
+    let small = null; if (art) { small = document.createElement('canvas'); const kk = Math.min(1, 720 / art.width); small.width = Math.round(art.width * kk); small.height = Math.round(art.height * kk); small.getContext('2d').drawImage(art, 0, 0, small.width, small.height); }
     for (const id of ids) { const preset = PRESETS.find((x) => x.id === id); if (!preset) continue; const label = preset.label;
       setLangProgress((p) => ({ ...p, [label]: 'working' }));
-      try { const next = adaptScene(sc, preset, ctx, ref); const name = `${displayName || a.name} · ${label}`;
+      try { const next = adaptScene(sc, preset, ctx, { art: small, artAsset, ref }); const name = `${displayName || a.name} · ${label}`;
         const r = await api.bundles.duplicate(a.id, { name, language: label, variantOf: a.id, scene: next, by: by(), fromName: displayName || a.name });
         made.push({ lang: label, fit: next.adapt?.mode === 'fit', rec: { id: r.id, bundle: r.bundle, name: r.name, language: label, variants: [] } }); setLangProgress((p) => ({ ...p, [label]: 'done' })); logEvent(`Made the ${label} size`); }
       catch (e) { report(e, 'making a size adapt', { preset: id }); setLangProgress((p) => ({ ...p, [label]: 'error' })); }

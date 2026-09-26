@@ -18,6 +18,7 @@ export const SCHEMA = obj({
   ctaButtons: { type: 'array', items: obj({ labelId: { type: 'string' }, fill: { type: 'string' }, ...box, cornerRadius: { type: 'number' } }) },
   overlays: { type: 'array', items: obj({ content: { type: 'string' }, ...box, fontSize: { type: 'number' }, fill: { type: 'string' }, fontFamilyGuess: { type: 'string' }, fontStyle: { type: 'string' }, align: { type: 'string', enum: ALIGN }, role: { type: 'string', enum: ROLES }, coverFill: nullable({ type: 'string' }) }) },
   cutouts: { type: 'array', items: obj({ name: { type: 'string' }, ...box, role: { type: 'string', enum: ['logo', 'product', 'decoration'] }, backgroundFill: nullable({ type: 'string' }) }) },
+  focal: nullable(obj({ ...box, what: { type: 'string' } })),
   warnings: { type: 'array', items: { type: 'string' } },
 });
 
@@ -29,6 +30,7 @@ Return JSON matching the schema. Coordinates are scene px (1 pt = 1 px), origin 
 2. elements — One entry for every element id that survives merging (use the FIRST id of a merged group), including images and shapes. Assign the role and a short human name ("Headline", "Subhead", "Offer", "CTA label", "CTA button", "Logo mark", "Logo wordmark", "Product shot", "Disclaimer", "Decoration"). Exactly one headline per artboard; at most one CTA label; the biggest photo is usually the product. Small text at the very bottom is disclaimer. Uppercase short text next to a small graphic is a logo wordmark. For text, align is how the block is aligned within its column (left/center/right); null for non-text.
 3. ctaButtons — If a CTA label sits on a button that is NOT already one of the listed shape elements (the button is baked into the artwork), describe it: fill sampled from the render (hex), bounds in scene px with the visible padding around the label, cornerRadius (half the height for a pill). If a listed shape already IS the button, do not add one here; give that shape the role "cta" in elements instead.
 4. overlays — Only when needsVision is true (the file has no live text because copy was outlined). Transcribe every text block visible in the render exactly. For overlays ONLY, give bounds and fontSize in RENDER PIXELS exactly as you measure them on the image (do not divide by previewScale; the server converts), fontSize ≈ cap height × 1.4, fill sampled from the glyphs, fontFamilyGuess (closest common font), fontStyle (Regular/Bold/…), align, role, and coverFill = the flat background colour immediately around the glyphs (null when the text sits on a photo or gradient). Otherwise return an empty array.
+6. focal — The one thing a crop must keep: a tight box in RENDER PIXELS around the main subject of the photo (a face, the people, the product). null when the creative has no photo.
 5. cutouts — Logos, logo marks, wordmarks (with their underline or tagline), product shots and badges that are VISIBLE in the render but NOT in the element list because they are baked into the Artwork raster (or a listed shape is only one piece of them). Give a tight box in RENDER PIXELS around each whole mark, a short name ("Federal Bank wordmark", "Kotak logo"), its role, and backgroundFill = the flat colour behind it (hex) or null when it sits on a photo or gradient. The server cuts those pixels out as a movable image. Never list text blocks (those are overlays) or anything that already exists as a separate element.
 6. warnings — Short notes a client should know: missing fonts, low-confidence roles, outlined text, anything you could not place.
 
@@ -151,7 +153,9 @@ export function applyClassification(scene, out) {
 
 export async function classify(scene, outDir) {
   const out = await askClaude(scene, outDir);
-  return applyCutouts(applyClassification(scene, out), out, outDir);
+  const classified = applyClassification(scene, out);
+  if (out.focal && typeof out.focal.x === 'number') { const k = 1 / (scene.ingest?.previewScale || 1); const W = scene.document.width, H = scene.document.height; const f = out.focal; const ks = (f.x + f.width) * k <= W * 1.05 && (f.y + f.height) * k <= H * 1.05 ? k : 1; classified.focal = { x: Math.round(f.x * ks), y: Math.round(f.y * ks), width: Math.round(f.width * ks), height: Math.round(f.height * ks), what: f.what || '' }; }
+  return applyCutouts(classified, out, outDir);
 }
 
 // ---- cutouts: lift a logo / mark / product shot out of the artwork rasters into its own movable image
