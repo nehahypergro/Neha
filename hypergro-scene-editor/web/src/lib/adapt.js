@@ -145,6 +145,12 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
   const sizeFor = (e) => { const fs = e.text.fontSize * k; return e === headline ? fs : Math.min(fs, (headline ? headline.text.fontSize * k : fs) * 0.62) < minBody ? Math.max(minBody, Math.min(fs, (headline ? headline.text.fontSize * k : fs) * 0.62)) : Math.min(fs, (headline ? headline.text.fontSize * k : fs) * 0.62); };
   const alignOf = (e) => (e.text.align === 'justify' ? 'left' : landscape ? 'left' : e.text.align || 'left');
 
+  // ---- 3b. brand row (drawn above the picture, so a card graphic with its own background never covers the logo): the logo keeps its side and its tagline; sized to the row
+  const logo = brand.sort((a, b) => area(b) - area(a))[0];
+  if (logo) { const s = Math.min(brandH / logo.bounds.height, TW * 0.4 / logo.bounds.width); const w = logo.bounds.width * s, h = logo.bounds.height * s; const onRight = logo.bounds.x + logo.bounds.width / 2 > W / 2;
+    const x = landscape ? (textSide === 'left' ? colX : TW - m - w) : onRight ? TW - m - w : m, y = safeTop + (brandH - h) / 2; push(logo, { bounds: { x, y, width: w, height: h } });
+    for (const t of [...brand.filter((e) => e !== logo), ...brandText]) push(t, { bounds: scaleBox({ x: t.bounds.x - logo.bounds.x, y: t.bounds.y - logo.bounds.y, width: t.bounds.width, height: t.bounds.height }, s, x, y), ...(t.text ? { text: scaleText(t.text, s) } : {}) }); }
+
   // ---- 5. legal at the bottom, then message + button as one block in the message region
   let legalTop = msgBottom; const legalOut = [];
   for (const e of [...legal].reverse()) { const fs = Math.max(minLegal, e.text.fontSize * k * 0.8); const mm = measure(ctx, e, fs, colW); legalTop -= mm.height; legalOut.unshift([e, { bounds: { x: colX, y: legalTop, width: colW, height: mm.height }, text: { ...mm.text, align: alignOf(e) } }]); legalTop -= gap * 0.5; }
@@ -188,12 +194,6 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
     const x = left ? Math.min(0, e.bounds.x * s) : right ? TW - w + Math.max(0, (e.bounds.x + e.bounds.width - W) * s) : Math.min(TW - w, (e.bounds.x / W) * TW), y = top ? Math.min(0, e.bounds.y * s) : bottom ? TH - h + Math.max(0, (e.bounds.y + e.bounds.height - H) * s) : Math.min(TH - h, (e.bounds.y / H) * TH);
     push(e, { bounds: { x, y, width: w, height: h }, ...(e.text ? { text: scaleText(e.text, s) } : {}), ...(e.meta?.cornerRadius ? { meta: { ...e.meta, cornerRadius: r2(e.meta.cornerRadius * s) } } : {}) }); }
   const panelSlot = out.length; // panels are inserted here once the copy block is known
-
-  // ---- 2. brand row: the logo keeps its side and its tagline; sized to the row
-  const logo = brand.sort((a, b) => area(b) - area(a))[0];
-  if (logo) { const s = Math.min(brandH / logo.bounds.height, TW * 0.4 / logo.bounds.width); const w = logo.bounds.width * s, h = logo.bounds.height * s; const onRight = logo.bounds.x + logo.bounds.width / 2 > W / 2;
-    const x = landscape ? (textSide === 'left' ? colX : TW - m - w) : onRight ? TW - m - w : m, y = safeTop + (brandH - h) / 2; push(logo, { bounds: { x, y, width: w, height: h } });
-    for (const t of [...brand.filter((e) => e !== logo), ...brandText]) push(t, { bounds: scaleBox({ x: t.bounds.x - logo.bounds.x, y: t.bounds.y - logo.bounds.y, width: t.bounds.width, height: t.bounds.height }, s, x, y), ...(t.text ? { text: scaleText(t.text, s) } : {}) }); }
 
   // ---- 3. the picture element (product shot, card, cut-out) in its region
   if (hero && picture && heroIsPhoto) {
