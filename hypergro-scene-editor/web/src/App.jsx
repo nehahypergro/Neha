@@ -388,11 +388,11 @@ export default function App() {
       setLangProgress((p) => ({ ...p, [label]: 'working' }));
       try { const next = adaptScene(sc, preset, ctx, ref); const name = `${displayName || a.name} · ${label}`;
         const r = await api.bundles.duplicate(a.id, { name, language: label, variantOf: a.id, scene: next, by: by(), fromName: displayName || a.name });
-        made.push({ lang: label, rec: { id: r.id, bundle: r.bundle, name: r.name, language: label, variants: [] } }); setLangProgress((p) => ({ ...p, [label]: 'done' })); logEvent(`Made the ${label} size`); }
+        made.push({ lang: label, fit: next.adapt?.mode === 'fit', rec: { id: r.id, bundle: r.bundle, name: r.name, language: label, variants: [] } }); setLangProgress((p) => ({ ...p, [label]: 'done' })); logEvent(`Made the ${label} size`); }
       catch (e) { report(e, 'making a size adapt', { preset: id }); setLangProgress((p) => ({ ...p, [label]: 'error' })); }
     }
     refreshArtworks();
-    if (made.length) { const first = made[0]; setToast(`${made.length} size${made.length > 1 ? 's' : ''} ready. Each one is a copy you can tidy up.`, 9000, { label: `Open ${first.lang}`, fn: () => openArtwork(first.rec) }); }
+    if (made.length) { const first = made[0]; setToast(made.some((x) => x.fit) ? `${made.length} size${made.length > 1 ? 's' : ''} ready. This is a document rather than an ad, so the whole page was fitted into the new shape instead of being re-arranged.` : `${made.length} size${made.length > 1 ? 's' : ''} ready. Each one is a copy you can tidy up.`, 10000, { label: `Open ${first.lang}`, fn: () => openArtwork(first.rec) }); }
     else setToast('No size could be made. Try again, and if it fails again tell the team.', 8000);
     setTimeout(() => setLangProgress((p) => Object.fromEntries(Object.entries(p).filter(([, v]) => v === 'error'))), 4000);
   }

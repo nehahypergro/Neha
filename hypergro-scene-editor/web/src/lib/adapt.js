@@ -35,6 +35,17 @@ export function adaptScene(scene, preset, ctx, ref = null) { // ref: canvas with
     else if (e.type === 'image' || e.role === 'product') images.push(e);
     else deco.push(e);
   }
+  // A document (statement, letter, form: many small text blocks, or several pages) is not an ad. Re-composing it would
+  // scatter its tables, so it is fitted whole into the new shape on a background of its own page colour.
+  const documentLike = texts.length + legal.length > 22 || (scene.document.artboards?.length || 1) > 1;
+  if (documentLike) {
+    const s = Math.min(TW / W, TH / H) * 0.94; const ox = (TW - W * s) / 2, oy = (TH - H * s) / 2; const out = [];
+    let page = '#FFFFFF'; if (ref) { try { const rc = ref.getContext('2d'); const pts = []; for (let f = 0.1; f < 1; f += 0.2) pts.push([2, Math.round(ref.height * f)], [ref.width - 3, Math.round(ref.height * f)], [Math.round(ref.width * f), ref.height - 3]); const tally = new Map(); for (const [x, y] of pts) { const d = rc.getImageData(x, y, 1, 1).data; const k = [d[0], d[1], d[2]].map((v) => Math.round(v / 12) * 12).join(','); tally.set(k, (tally.get(k) || 0) + 1); } const c = [...tally.entries()].sort((x, y) => y[1] - x[1])[0][0].split(',').map(Number); /* the most common edge colour is the page, not the header band */ page = '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase(); } catch { /* keep white */ } }
+    out.push({ id: 'el_page_bg', type: 'vector', name: 'Background', parentId: null, artboardId: 0, zIndex: 0, bounds: { x: 0, y: 0, width: TW, height: TH }, transform: { rotation: 0, scaleX: 1, scaleY: 1 }, fill: page, gradient: null, stroke: null, opacity: 1, blendMode: 'normal', asset: null, assetSvg: null, editable: false, locked: true, visible: true, role: 'background', renderMode: 'css', meta: { kind: 'rect', cornerRadius: 0, addedBy: 'adapt' } });
+    els.forEach((e, i) => out.push({ ...e, artboardId: 0, zIndex: i + 1, bounds: { x: r2(e.bounds.x * s + ox), y: r2(e.bounds.y * s + oy), width: r2(e.bounds.width * s), height: r2(e.bounds.height * s) }, ...(e.text ? { text: { ...e.text, fontSize: r2(e.text.fontSize * s), lineHeight: e.text.lineHeight ? r2(e.text.lineHeight * s) : null, letterSpacing: r2((e.text.letterSpacing || 0) * s) } } : {}), ...(e.meta?.cornerRadius ? { meta: { ...e.meta, cornerRadius: r2(e.meta.cornerRadius * s) } } : {}) }));
+    const board0 = scene.document.artboards?.[ab] || { id: 0, name: 'Artboard 1' };
+    return { ...scene, document: { ...scene.document, width: TW, height: TH, activeArtboard: 0, artboards: [{ ...board0, id: 0, x: 0, y: 0, width: TW, height: TH }] }, elements: out, adapt: { preset: preset.id, mode: 'fit', from: { width: W, height: H } } };
+  }
   const hero = images.sort((a, b) => area(b) - area(a))[0] || null; deco.push(...images.slice(1));
   const portrait = TH / TW > 1.15, landscape = TW / TH > 1.15;
   const m = Math.round(Math.min(TW, TH) * 0.06), gap = Math.round(Math.min(TW, TH) * 0.025);
