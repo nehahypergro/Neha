@@ -391,6 +391,25 @@ export default function App() {
     for (const e of sc.elements) if (e.type === 'text' && e.meta?.overlay && e.meta.coverFill && (e.artboardId ?? 0) === ab) { const p = coverPad(e.text); g.fillStyle = e.meta.coverFill; g.fillRect((e.bounds.x - p) * scale, (e.bounds.y - p) * scale, (e.bounds.width + 2 * p) * scale, (e.bounds.height + 2 * p) * scale); }
     return c;
   }
+  // A product shot or cut-out that carries its own flat backdrop (usually the master's background colour) gets that backdrop
+  // knocked out, with a soft, colour-decontaminated edge, so it sits cleanly on whatever field or photo the new layout puts
+  // behind it. Returns a PNG blob, or null when the picture has no flat backdrop (a photo, an already transparent PNG).
+  async function knockOutBackdrop(url) {
+    if (!url) return null; const img = await loadImage(url); const w = img.naturalWidth, h = img.naturalHeight; if (w < 8 || h < 8 || w * h > 12e6) return null;
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const id = g.getImageData(0, 0, w, h); const d = id.data;
+    const at = (x, y) => (y * w + x) * 4; const corners = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]].map(([x, y]) => [d[at(x, y)], d[at(x, y) + 1], d[at(x, y) + 2], d[at(x, y) + 3]]);
+    if (corners.some((q) => q[3] < 250)) return null;
+    const bg = [0, 1, 2].map((k) => corners.reduce((n, q) => n + q[k], 0) / 4); if (corners.some((q) => Math.abs(q[0] - bg[0]) + Math.abs(q[1] - bg[1]) + Math.abs(q[2] - bg[2]) > 24)) return null;
+    const dist = (i) => Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) + Math.abs(d[i + 2] - bg[2]); const T = 36;
+    const seen = new Uint8Array(w * h); const stack = []; for (let x = 0; x < w; x++) stack.push(x, 0, x, h - 1); for (let y = 0; y < h; y++) stack.push(0, y, w - 1, y);
+    let cleared = 0;
+    while (stack.length) { const y = stack.pop(), x = stack.pop(); const k = y * w + x; if (seen[k]) continue; seen[k] = 1; const i = k * 4; if (dist(i) > T) continue; d[i + 3] = 0; cleared++; if (x > 0) stack.push(x - 1, y); if (x < w - 1) stack.push(x + 1, y); if (y > 0) stack.push(x, y - 1); if (y < h - 1) stack.push(x, y + 1); }
+    if (!cleared || cleared > w * h * 0.6) return null;
+    const gone = (k) => d[k * 4 + 3] === 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const k = y * w + x, i = k * 4; if (d[i + 3] === 0) continue; if (!((x > 0 && gone(k - 1)) || (x < w - 1 && gone(k + 1)) || (y > 0 && gone(k - w)) || (y < h - 1 && gone(k + w)))) continue;
+      const dd = dist(i); if (dd >= T * 3) continue; const a = Math.max(0.05, (dd - T) / (T * 2)); for (let ch = 0; ch < 3; ch++) d[i + ch] = Math.max(0, Math.min(255, Math.round((d[i + ch] - (1 - a) * bg[ch]) / a))); d[i + 3] = Math.round(a * 255); }
+    g.putImageData(id, 0, 0); return new Promise((r) => c.toBlob(r, 'image/png'));
+  }
   async function makeSizes(ids) {
     const a = artRefState.current, sc = sceneRef.current; if (!a?.id || !sc || !ids.length) { setToast('Upload a creative first to make other sizes.'); return; }
     setLangProgress((p) => ({ ...p, ...Object.fromEntries(ids.map((i) => [PRESETS.find((x) => x.id === i).label, 'pending'])) }));
@@ -399,11 +418,18 @@ export default function App() {
     try { art = await buildArtComposite(sc, edRef.current.assets); } catch (e) { report(e, 'reading the artwork for a size adapt'); art = null; }
     if (art) { try { const blob = await new Promise((r) => art.toBlob(r, 'image/png')); const clean = `adapt-art-${Date.now().toString(36)}.png`; const fd = new FormData(); fd.append('file', blob, clean); fd.append('name', clean); const r = await fetch(`/api/bundles/${a.id}/assets`, { method: 'POST', body: fd }); if (!r.ok) throw new Error('asset ' + r.status); artAsset = 'user/' + clean; dispatch({ type: 'asset', path: artAsset, url: URL.createObjectURL(blob) }); } catch (e) { report(e, 'storing the artwork for a size adapt'); artAsset = null; } }
     try { const url = edRef.current.assets[sc.document.artboards?.[sc.document.activeArtboard ?? 0]?.reference]; if (url) { const img = await loadImage(url); ref = document.createElement('canvas'); const kk = Math.min(1, 1200 / img.naturalWidth); ref.width = Math.round(img.naturalWidth * kk); ref.height = Math.round(img.naturalHeight * kk); ref.getContext('2d').drawImage(img, 0, 0, ref.width, ref.height); } } catch { ref = null; }
+    let subject = null; try { const r = await fetch(`/api/bundles/${a.id}/subject`, { method: 'POST' }); if (r.ok) subject = await r.json(); } catch { subject = null; } // faces and subject, for designer-grade crops
+    const swap = {}; const abNow = sc.document.activeArtboard ?? 0;
+    for (const e of sc.elements.filter((x) => x.type === 'image' && x.asset && ['product', 'image', 'decoration'].includes(x.role) && (x.artboardId ?? 0) === abNow && x.bounds.width * x.bounds.height < sc.document.width * sc.document.height * 0.3)) {
+      try { const blob = await knockOutBackdrop(edRef.current.assets[e.asset]); if (!blob) continue; const clean = `adapt-cut-${e.id}-${Date.now().toString(36)}.png`; const fd = new FormData(); fd.append('file', blob, clean); fd.append('name', clean);
+        const r = await fetch(`/api/bundles/${a.id}/assets`, { method: 'POST', body: fd }); if (!r.ok) throw new Error('asset ' + r.status); swap[e.id] = 'user/' + clean; dispatch({ type: 'asset', path: swap[e.id], url: URL.createObjectURL(blob) }); }
+      catch (err) { report(err, 'cleaning a picture for a size adapt'); }
+    }
     // analysis runs on a small copy of the composite; the full one is what the adapt draws
     let small = null; if (art) { small = document.createElement('canvas'); const kk = Math.min(1, 720 / art.width); small.width = Math.round(art.width * kk); small.height = Math.round(art.height * kk); small.getContext('2d').drawImage(art, 0, 0, small.width, small.height); }
     for (const id of ids) { const preset = PRESETS.find((x) => x.id === id); if (!preset) continue; const label = preset.label;
       setLangProgress((p) => ({ ...p, [label]: 'working' }));
-      try { const next = adaptScene(sc, preset, ctx, { art: small, artAsset, ref }); const name = `${displayName || a.name} · ${label}`;
+      try { const next = adaptScene(sc, preset, ctx, { art: small, artAsset, ref, swap, subject: subject?.subject || null, faces: subject?.faces || [] }); const name = `${displayName || a.name} · ${label}`;
         const r = await api.bundles.duplicate(a.id, { name, language: label, variantOf: a.id, scene: next, by: by(), fromName: displayName || a.name });
         made.push({ lang: label, fit: next.adapt?.mode === 'fit', rec: { id: r.id, bundle: r.bundle, name: r.name, language: label, variants: [] } }); setLangProgress((p) => ({ ...p, [label]: 'done' })); logEvent(`Made the ${label} size`); }
       catch (e) { report(e, 'making a size adapt', { preset: id }); setLangProgress((p) => ({ ...p, [label]: 'error' })); }

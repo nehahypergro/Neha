@@ -40,9 +40,15 @@ export function analyseArt(art, W, H, ignore = []) {
   const rw = art.width, rh = art.height; const d = art.getContext('2d').getImageData(0, 0, rw, rh).data; const sx = rw / W, sy = rh / H;
   const at = (x, y) => { const i = (Math.min(rh - 1, Math.max(0, y)) * rw + Math.min(rw - 1, Math.max(0, x))) * 4; return [d[i], d[i + 1], d[i + 2], d[i + 3]]; };
   // the colour field is the most common colour over the whole artwork (a photo spreads its votes; a flat field does not)
-  const tally = new Map(); const q = (v) => Math.round(v / 12) * 12; let votes = 0;
-  for (let y = 0; y < rh; y += 4) for (let x = 0; x < rw; x += 4) { const p = at(x, y); if (p[3] < 128) continue; votes++; const k = [q(p[0]), q(p[1]), q(p[2])].join(','); tally.set(k, (tally.get(k) || 0) + 1); }
+  const tally = new Map(), sums = new Map(); const q = (v) => Math.round(v / 12) * 12; let votes = 0;
+  for (let y = 0; y < rh; y += 4) for (let x = 0; x < rw; x += 4) { const p = at(x, y); if (p[3] < 128) continue; votes++; const k = [q(p[0]), q(p[1]), q(p[2])].join(','); tally.set(k, (tally.get(k) || 0) + 1); const s0 = sums.get(k) || [0, 0, 0]; s0[0] += p[0]; s0[1] += p[1]; s0[2] += p[2]; sums.set(k, s0); }
   const top = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]; const field = top ? top[0].split(',').map(Number) : [255, 255, 255]; const fieldShare = top && votes ? top[1] / votes : 0;
+  const exact = top ? sums.get(top[0]).map((v) => v / top[1]) : field; // the flat fill itself, not its quantised bucket
+  // How far the flat field runs in from each side before something else starts, per row / column. A strict colour match:
+  // a vector fill is one exact colour, while a photo's pale areas (a white counter, window light) are near it but not on it.
+  const isFlat = (p) => p[3] >= 40 && Math.abs(p[0] - exact[0]) + Math.abs(p[1] - exact[1]) + Math.abs(p[2] - exact[2]) <= 12;
+  const reach = (along, across, get) => { const vals = []; for (let a = 0; a < across; a += 2) { let r = 0; while (r < along && isFlat(get(r, a))) r++; if (r < along * 0.92) vals.push(r); } if (!vals.length) return 0; vals.sort((x, y) => x - y); return vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.97))]; };
+  const reachSides = { l: reach(rw, rh, (r, a) => at(r, a)) * W / rw, r: reach(rw, rh, (r, a) => at(rw - 1 - r, a)) * W / rw, t: reach(rh, rw, (r, a) => at(a, r)) * H / rh, b: reach(rh, rw, (r, a) => at(a, rh - 1 - r)) * H / rh };
   const G = 24; const cells = []; let contentCount = 0, spreadSum = 0;
   const skip = (gx, gy) => ignore.some((b) => inside([(gx + 0.5) * W / G, (gy + 0.5) * H / G], b));
   for (let gy = 0; gy < G; gy++) for (let gx = 0; gx < G; gx++) {
@@ -61,7 +67,7 @@ export function analyseArt(art, W, H, ignore = []) {
   // a photo is a large cluster with lots of variation inside it; a gradient is wide coverage with little; the rest is graphic
   const main = clusters[0]; const kind = main && main.spread > 14 && main.share > 0.15 ? 'photo' : coverage > 0.55 ? 'gradient' : 'graphic';
   void sx; void sy;
-  return { field, fieldHex: hexOf(field), fieldShare, kind, coverage, meanSpread, clusters: clusters.filter((c) => c.cells >= 3).slice(0, 3) };
+  return { field, fieldHex: hexOf(field), fieldShare, kind, coverage, meanSpread, reach: reachSides, clusters: clusters.filter((c) => c.cells >= 3).slice(0, 3) };
 }
 
 /** A crop window of the source art (fractions of the whole art) that covers a target region, centred on the focal point,
@@ -73,11 +79,26 @@ function cropFor(W, H, region, focal, box = null) {
   return { x: x / W, y: y / H, w: w / W, h: h / H };
 }
 
+/** The crop of the photo for a target region, in master units: as large as the photo's extent allows, the whole subject when
+ *  it fits (otherwise its faces), faces about a third of the way down with headroom, and never a face cut when avoidable. */
+function cropWindow(region, box, subj, faces, fallback) {
+  const aspect = region.width / region.height; let w = Math.min(box.width, box.height * aspect), h = w / aspect; if (h > box.height) { h = box.height; w = h * aspect; }
+  const fb = faces.length ? union(faces.map((b) => ({ bounds: b }))) : null;
+  let cx = subj ? subj.x + subj.width / 2 : fallback[0]; if (subj && subj.width > w && fb) cx = fb.x + fb.width / 2;
+  let cy = subj && subj.height <= h ? subj.y + subj.height / 2 : fb ? fb.y + fb.height / 2 + h * 0.14 : subj ? subj.y + subj.height * 0.35 : fallback[1];
+  let x = cx - w / 2, y = cy - h / 2;
+  if (fb) { const px = Math.max(0, Math.min(w * 0.05, (w - fb.width) / 2)), py = Math.max(0, Math.min(h * 0.08, (h - fb.height) / 2));
+    if (fb.width <= w) { x = Math.min(x, fb.x - px); x = Math.max(x, fb.x + fb.width + px - w); } if (fb.height <= h) { y = Math.min(y, fb.y - py); y = Math.max(y, fb.y + fb.height + py * 0.6 - h); } }
+  x = Math.min(box.x + box.width - w, Math.max(box.x, x)); y = Math.min(box.y + box.height - h, Math.max(box.y, y));
+  return { x, y, w, h };
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 export function adaptScene(scene, preset, ctx, extra = {}) {
   const { art = null, artAsset = null, ref = null } = extra;
   const W = scene.document.width, H = scene.document.height, TW = preset.w, TH = preset.h; const ab = scene.document.activeArtboard ?? 0;
-  const els = scene.elements.filter((e) => e.type !== 'group' && e.visible !== false && (e.artboardId ?? 0) === ab).sort((a, b) => a.zIndex - b.zIndex);
+  const swap = extra.swap || {};
+  const els = scene.elements.filter((e) => e.type !== 'group' && e.visible !== false && (e.artboardId ?? 0) === ab).map((e) => (swap[e.id] ? { ...e, asset: swap[e.id], assetSvg: null, meta: { ...(e.meta || {}), backdropRemoved: true } } : e)).sort((a, b) => a.zIndex - b.zIndex);
   const isLayer = (e) => e.type === 'vector' && e.meta?.collapsedGroup;
   const layers = [], shapes = [], brand = [], brandText = [], images = [], texts = [], action = [], legal = [];
   for (const e of els) {
@@ -119,9 +140,24 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
   let fieldHex = fieldShape?.fill || panelShape?.fill || info?.fieldHex || '#FFFFFF';
   if ((heroIsPhoto || (info && info.kind !== 'graphic')) && !fieldShape && !panelShape && !(info && info.fieldShare > 0.28)) { const dom = dominant(ref || art) || [40, 60, 90]; fieldHex = hexOf(copyLight ? dom.map((v) => v * 0.42) : dom.map((v) => 235 + (v - 235) * 0.12)); }
   const textCentroid = texts.length ? texts.reduce((n, e) => n + centre(e)[0], 0) / texts.length : W / 2;
-  const focal = scene.focal ? [scene.focal.x + scene.focal.width / 2, scene.focal.y + scene.focal.height / 2] : [textCentroid < W / 2 ? W * 0.72 : W * 0.28, H * 0.42];
+  const subj = extra.subject || scene.focal || null; const faces = (extra.faces || []).filter((b) => b && b.width > 0 && b.height > 0);
+  const focal = subj ? [subj.x + subj.width / 2, subj.y + subj.height / 2] : [textCentroid < W / 2 ? W * 0.72 : W * 0.28, H * 0.42];
   const photoLike = (info && info.kind !== 'graphic') || heroIsPhoto;
   const hasPicture = !!hero || photoLike;
+  // the photo's own extent: a photo element, or the main content cluster of the artwork trimmed on the copy's side to where it is clean
+  let photoBox = null;
+  if (heroIsPhoto) photoBox = { ...hero.bounds };
+  else if (info && info.kind !== 'graphic') {
+    const c0 = info.clusters[0]; photoBox = info.kind === 'photo' && c0 ? { x: c0.x, y: c0.y, width: c0.width, height: c0.height } : { x: 0, y: 0, width: W, height: H };
+    const tcy = texts.length ? texts.reduce((n, e) => n + centre(e)[1], 0) / texts.length : H / 2; const pcx = photoBox.x + photoBox.width / 2, pcy = photoBox.y + photoBox.height / 2; const R = info.reach || { l: 0, r: 0, t: 0, b: 0 };
+    let [bx0, by0, bx1, by1] = [photoBox.x, photoBox.y, photoBox.x + photoBox.width, photoBox.y + photoBox.height];
+    if (Math.abs(textCentroid - pcx) / W >= Math.abs(tcy - pcy) / H) { if (textCentroid < pcx) bx0 = Math.max(bx0, R.l); else bx1 = Math.min(bx1, W - R.r); }
+    else { if (tcy < pcy) by0 = Math.max(by0, R.t); else by1 = Math.min(by1, H - R.b); }
+    if (bx1 - bx0 > W * 0.2 && by1 - by0 > H * 0.2) photoBox = { x: bx0, y: by0, width: bx1 - bx0, height: by1 - by0 };
+  }
+  const facesBox = faces.length ? union(faces.map((q) => ({ bounds: q }))) : null; const faceW = faces.length ? faces.reduce((n, q) => n + q.width, 0) / faces.length : 0, faceH = faces.length ? faces.reduce((n, q) => n + q.height, 0) / faces.length : 0;
+  const keepBox = facesBox ? { x: facesBox.x - faceW * 0.25, y: facesBox.y - faceH * 0.15, width: facesBox.width + faceW * 0.5, height: facesBox.height + faceH * 0.3 } : subj;
+  const fits = (region) => { if (!photoBox || !keepBox) return true; const win = cropWindow(region, photoBox, subj, faces, focal); return keepBox.width <= win.w; };
 
   // ---- composition and regions (target px)
   const m = Math.round(Math.min(TW, TH) * 0.06), gap = Math.round(Math.min(TW, TH) * 0.024);
@@ -129,20 +165,25 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
   const brandH = Math.round(TH * (landscape ? 0.085 : story ? 0.05 : 0.065));
   let composition, colX = m, colW = TW - 2 * m, picture = null, msgTop = safeTop + brandH + gap, msgBottom = TH - safeBottom, textSide = 'left';
   if (landscape) {
-    if (hasPicture) { composition = 'split'; const photoRight = focal[0] >= W / 2; textSide = photoRight ? 'left' : 'right'; const split = Math.round(TW * 0.52);
-      picture = photoRight ? { x: split, y: 0, width: TW - split, height: TH } : { x: 0, y: 0, width: split, height: TH }; colW = split - m - Math.round(m * 0.6); colX = photoRight ? m : TW - split + Math.round(m * 0.6); }
+    let share = 0.48; if (hasPicture && photoBox) for (const sh of TW / TH < 1.6 ? [0.48, 0.55] : [0.48, 0.55, 0.62]) { share = sh; if (fits({ width: TW * sh, height: TH })) break; }
+    const bandInstead = hasPicture && photoBox && !fits({ width: TW * share, height: TH }) && TW / TH < 1.6; // 4:3: a wide subject reads better above the copy than cut in a narrow column
+    if (bandInstead) { composition = 'photo-band'; picture = { x: 0, y: safeTop + brandH + gap, width: TW, height: 0 }; }
+    else if (hasPicture) { composition = 'split'; const photoRight = focal[0] >= W / 2; textSide = photoRight ? 'left' : 'right'; const split = Math.round(TW * (1 - share));
+      picture = photoRight ? { x: split, y: 0, width: TW - split, height: TH } : { x: 0, y: 0, width: TW - split, height: TH }; colW = split - m - Math.round(m * 0.6); colX = photoRight ? m : TW - split + Math.round(m * 0.6); }
     else { composition = 'text-led'; colW = Math.round(TW * 0.7); }
   } else if (hasPicture) { composition = 'photo-band'; picture = { x: 0, y: safeTop + brandH + gap, width: TW, height: 0 }; /* the band starts under the brand row */ /* height set once the copy is measured */ }
   else composition = 'text-led';
 
   // ---- 4. type scale: the headline is set to read at format size and wrap to a few lines; the rest keep their ratio to it
   const headline = texts.find((e) => e.role === 'headline') || [...texts].sort((a, b) => b.text.fontSize - a.text.fontSize)[0];
-  const maxLines = landscape ? 3 : 3; const hMax = TW * (landscape ? 0.062 : 0.092), hMin = TW * (landscape ? 0.038 : 0.052);
+  const maxLines = portrait ? 4 : 3; /* a story has the height for a four-line headline set large */ const hMax = TW * (landscape ? 0.062 : portrait ? 0.092 : 0.08), hMin = TW * (landscape ? 0.038 : 0.052);
   let k;
-  if (headline) { let fs = hMax; for (let i = 0; i < 14; i++) { const mm = measure(ctx, headline, fs, colW); if (mm.lines <= maxLines || fs <= hMin) break; fs = Math.max(hMin, fs * 0.92); } k = fs / headline.text.fontSize; }
+  if (headline) { let fs = hMax; for (let i = 0; i < 14; i++) { const mm = measure(ctx, headline, fs, colW); if (mm.lines <= maxLines || fs <= hMin * 0.85) break; fs = Math.max(hMin * 0.85, fs * 0.92); } k = fs / headline.text.fontSize; }
   else k = Math.min(2.2, Math.max(0.5, colW / Math.max(...texts.map((e) => e.bounds.width), W * 0.5)));
   const minBody = TW * (landscape ? 0.015 : 0.021), minLegal = Math.max(11, TW * (landscape ? 0.011 : 0.014));
   const sizeFor = (e) => { const fs = e.text.fontSize * k; return e === headline ? fs : Math.min(fs, (headline ? headline.text.fontSize * k : fs) * 0.62) < minBody ? Math.max(minBody, Math.min(fs, (headline ? headline.text.fontSize * k : fs) * 0.62)) : Math.min(fs, (headline ? headline.text.fontSize * k : fs) * 0.62); };
+  const hFloor = hMin * 0.85;
+  const copyHeight = (kk) => { let y = 0; for (const e of [...texts].sort((a, b) => a.bounds.y - b.bounds.y)) { const fs = Math.max(e === headline ? hFloor : minBody, sizeFor(e) * kk / k); y += measure(ctx, e, fs, colW).height + Math.round(fs * 0.5); } return y + (action.length ? union(action).height * Math.min(kk, colW / union(action).width) + gap : 0); };
   const alignOf = (e) => (e.text.align === 'justify' ? 'left' : landscape ? 'left' : e.text.align || 'left');
 
   // ---- 5. legal at the bottom, then message + button as one block in the message region
@@ -152,7 +193,9 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
   if (composition === 'photo-band') {
     const ideal = (() => { let y = 0; for (const e of [...texts].sort((a, b) => a.bounds.y - b.bounds.y)) { const fs = Math.max(e === headline ? hMin : minBody, sizeFor(e)); y += measure(ctx, e, fs, colW).height + Math.round(fs * 0.5); } return y + (action.length ? union(action).height * Math.min(k, colW / union(action).width) + gap : 0); })();
     const legalH = msgBottom - legalTop + (legal.length ? gap : 0); const room = msgBottom - legalH - picture.y - gap * 3 - ideal;
-    picture.height = Math.round(Math.min(TH * (story ? 0.5 : 0.5), Math.max(TH * (story ? 0.26 : 0.3), room)));
+    const need = keepBox && photoBox ? keepBox.height * (TW / photoBox.width) * 1.12 : 0; // the faces at the band's scale, with headroom
+    const avail = msgBottom - legalH - picture.y - gap * 3; const minCopy = copyHeight(k * 0.5); // the copy at its smallest readable size
+    picture.height = Math.round(Math.max(TH * 0.2, Math.min(TH * (story ? 0.5 : 0.55), avail - minCopy, Math.max(TH * (story ? 0.26 : portrait ? 0.3 : 0.36), room, need))));
     msgTop = picture.y + picture.height + gap * 1.5;
   }
   // ---- 1. background: colour field, then the photo where the composition wants it, or decorations re-anchored
@@ -160,11 +203,9 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
   const artEl = (b, crop, name = 'Artwork') => ({ id: 'el_art_' + z, type: 'vector', name, parentId: null, artboardId: 0, zIndex: 0, bounds: b, transform: { rotation: 0, scaleX: 1, scaleY: 1 }, fill: null, gradient: null, stroke: null, opacity: 1, blendMode: 'normal', asset: artAsset, assetSvg: null, editable: false, locked: true, visible: true, role: 'background', meta: { collapsedGroup: true, adaptArt: true, crop } });
   if (artAsset && info) {
     if (info.kind !== 'graphic') {
-      // the photo's own extent: when it fills only part of the artwork (a photo beside a colour panel), crop inside it
-      const c0 = info.clusters[0]; const photoBox = info.kind === 'photo' && c0 && c0.width * c0.height < W * H * 0.9 ? c0 : null;
-      const fp = photoBox && !inside(focal, photoBox) ? [photoBox.x + photoBox.width / 2, photoBox.y + photoBox.height * 0.42] : focal;
-      if (picture) push(artEl(picture, cropFor(W, H, picture, fp, photoBox), 'Photo'));
-      else push(artEl({ x: 0, y: 0, width: TW, height: TH }, cropFor(W, H, { width: TW, height: TH }, fp, photoBox), 'Photo')); // text-led over a photo: the copy gets a panel below
+      const frac = (win) => ({ x: win.x / W, y: win.y / H, w: win.w / W, h: win.h / H });
+      const region = picture || { x: 0, y: 0, width: TW, height: TH };
+      push(artEl(region, frac(cropWindow(region, photoBox || { x: 0, y: 0, width: W, height: H }, subj, faces, focal)), 'Photo'));
     } else {
       // decorations keep their corner and their size relative to the short side, cropped out of the art
       const ds = Math.min(TW, TH) / Math.min(W, H);
@@ -191,8 +232,8 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
 
   // ---- 3. the picture element (product shot, card, cut-out) in its region
   if (hero && picture && heroIsPhoto) {
-    const cr0 = hero.meta?.crop || { x: 0, y: 0, w: 1, h: 1 }; const fx = (focal[0] - hero.bounds.x) / hero.bounds.width, fy = (focal[1] - hero.bounds.y) / hero.bounds.height; // focal as a fraction of the element
-    const win = cropFor(hero.bounds.width, hero.bounds.height, picture, [fx * hero.bounds.width, fy * hero.bounds.height]);
+    const cr0 = hero.meta?.crop || { x: 0, y: 0, w: 1, h: 1 }; const wa = cropWindow(picture, hero.bounds, subj, faces, focal);
+    const win = { x: (wa.x - hero.bounds.x) / hero.bounds.width, y: (wa.y - hero.bounds.y) / hero.bounds.height, w: wa.w / hero.bounds.width, h: wa.h / hero.bounds.height };
     push(hero, { bounds: picture, meta: { ...(hero.meta || {}), crop: { x: cr0.x + win.x * cr0.w, y: cr0.y + win.y * cr0.h, w: win.w * cr0.w, h: win.h * cr0.h } } });
     // a card or badge that sat on the photo keeps its place on it
     const sx = picture.width / (win.w * hero.bounds.width), sy = picture.height / (win.h * hero.bounds.height);
@@ -203,7 +244,7 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
 
   const regionBottom = legalTop - (legal.length ? gap : 0);
   const ordered = [...texts].sort((a, b) => a.bounds.y - b.bounds.y || a.bounds.x - b.bounds.x);
-  const plan = (kk) => { let y = 0; const items = []; for (const e of ordered) { const fs = Math.max(e === headline ? hMin : minBody, sizeFor(e) * kk / k); const mm = measure(ctx, e, fs, colW); items.push([e, { bounds: { x: colX, y, width: colW, height: mm.height }, text: { ...mm.text, align: alignOf(e) } }]); y += mm.height + Math.round(fs * (e === headline ? 0.5 : 0.45)); } return { items, height: y }; };
+  const plan = (kk) => { let y = 0; const items = []; for (const e of ordered) { const fs = Math.max(e === headline ? hFloor : minBody, sizeFor(e) * kk / k); const mm = measure(ctx, e, fs, colW); items.push([e, { bounds: { x: colX, y, width: colW, height: mm.height }, text: { ...mm.text, align: alignOf(e) } }]); y += mm.height + Math.round(fs * (e === headline ? 0.5 : 0.45)); } return { items, height: y }; };
   let kk = k, p = plan(kk); const actionH = () => (action.length ? union(action).height * Math.min(kk, colW / union(action).width) + gap : 0);
   for (let i = 0; i < 8 && p.height + actionH() > regionBottom - msgTop && kk > k * 0.5; i++) { kk *= 0.92; p = plan(kk); }
   const actionOut = []; let gh = 0, gw = 0;
@@ -225,11 +266,12 @@ export function adaptScene(scene, preset, ctx, extra = {}) {
   // a colour panel that held the copy in the master is reshaped to the new copy block; on a photo the block gets one anyway
   const blockBottom = actionY + (action.length ? gh : 0); const pad = Math.round(gap * 1.6);
   const panelBox = composition === 'photo-band' ? { x: 0, y: blockTop - pad, width: TW, height: blockBottom - blockTop + pad * 2 } : { x: colX - pad, y: blockTop - pad, width: colW + pad * 2, height: blockBottom - blockTop + pad * 2 };
-  if (panels.length) { const e = panels.sort((a, b) => area(b) - area(a))[0]; out.splice(panelSlot, 0, { ...e, artboardId: 0, zIndex: 0, bounds: landscape && photoLike ? { x: textSide === 'left' ? 0 : picture.x + picture.width, y: 0, width: picture.x || TW - picture.width, height: TH } : panelBox, meta: { ...e.meta, cornerRadius: landscape && photoLike ? 0 : Math.min(e.meta?.cornerRadius || 0, pad) } }); }
+  if (panels.length) { const e = panels.sort((a, b) => area(b) - area(a))[0]; out.splice(panelSlot, 0, { ...e, artboardId: 0, zIndex: 0, bounds: composition === 'split' && photoLike ? { x: textSide === 'left' ? 0 : picture.x + picture.width, y: 0, width: picture.x || TW - picture.width, height: TH } : panelBox, meta: { ...e.meta, cornerRadius: composition === 'split' && photoLike ? 0 : Math.min(e.meta?.cornerRadius || 0, pad) } }); }
   else if (photoLike && !picture) out.splice(panelSlot, 0, { ...rect('el_panel', 'Text panel', panelBox, fieldHex, { opacity: 0.94, meta: { kind: 'rect', cornerRadius: Math.round(gap * 0.6), addedBy: 'adapt' } }), zIndex: 0 });
   for (const [e, patch] of p.items) push(e, patch);
   for (const [e, patch] of actionOut) push(e, patch);
   for (const [e, patch] of legalOut) push(e, patch);
+  for (const e of out) if (e.type === 'text' && e.meta?.coverFill) e.meta = { ...e.meta, coverFill: null, coverStrategy: null };
   out.forEach((e, i) => (e.zIndex = i));
   if (import.meta.env?.DEV) console.info('[adapt]', preset.id, composition, info ? { kind: info.kind, coverage: +info.coverage.toFixed(2), spread: +info.meanSpread.toFixed(1), field: info.fieldHex, clusters: info.clusters.map((c) => [Math.round(c.x), Math.round(c.y), Math.round(c.width), Math.round(c.height), c.cells]) } : 'no art', { heroIsPhoto, photoLike, hasPicture, fieldHex, focal: focal.map(Math.round) });
   return finish(composition, `${composition}${info ? ' · ' + info.kind : ''}`);

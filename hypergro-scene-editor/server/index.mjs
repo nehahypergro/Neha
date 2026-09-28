@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { ingest } from './ingest.mjs';
 import { chat, translateScene, hasClaude, MODEL, PROVIDER, describeProvider } from './chat.mjs';
 import { library } from './fontlib.mjs';
-import { transcribeElement } from './classify.mjs';
+import { transcribeElement, findSubject } from './classify.mjs';
 import { cdnEnabled, storeAsset, restoreFromCdn, initCdn, syncBundle, syncFonts, syncMissing, scheduleSync, storeOriginal, restoreAll, rootInfo } from './cdn.mjs';
 import { initErrors, reportError, recentErrors, publicMessage } from './errors.mjs';
 import { listBundles, readMeta, writeMeta, duplicateBundle, appendEvents, readEvents, readiness } from './bundles.mjs';
@@ -177,6 +177,14 @@ app.post('/api/translate', async (req, res) => {
   try { res.json(await translateScene(scene, String(language))); } catch (e) { res.status(502).json({ error: e.message }); }
 });
 // ---- read a legacy-font line from the original render → Unicode (the marketer confirms before it is applied)
+// Size adapts: the photo's subject and faces, found once per creative and kept in its meta.
+app.post('/api/bundles/:id/subject', async (req, res) => {
+  const { id } = req.params; if (!bundleOk(id)) return res.status(404).json({ error: 'unknown bundle' });
+  const dir = path.join(BUNDLES, id); const meta = await readMeta(dir); if (meta.subject && req.query.refresh !== '1') return res.json(meta.subject);
+  if (!hasClaude()) return res.json({ subject: null, faces: [], offline: true });
+  try { const scene = JSON.parse(await readFile(path.join(dir, 'scene.json'), 'utf8')); const out = await findSubject(scene, dir); await writeMeta(dir, { subject: out }); res.json(out); }
+  catch (e) { reportError({ where: 'finding the subject for a size adapt', message: e.message, stack: e.stack, bundle: id }); res.status(502).json({ error: e.message }); }
+});
 app.post('/api/bundles/:id/transcribe', async (req, res) => {
   const { id } = req.params; if (!bundleOk(id)) return res.status(404).json({ error: 'unknown bundle' });
   if (!hasClaude()) return res.status(503).json({ error: 'The assistant is offline, so reading the words is not available right now.' });

@@ -259,3 +259,17 @@ export async function transcribeElement(scene, outDir, el, hint = {}) {
   const text = r.content.filter((c) => c.type === 'text').map((c) => c.text).join(''); const m = text.match(/\{[\s\S]*\}/); if (!m) throw new Error('unexpected reply');
   const out = JSON.parse(m[0]); return { text: String(out.text || '').replace(/\\n/g, '\n').trim(), confidence: out.confidence || 'medium', notes: out.notes || '' };
 }
+
+/** What a crop must keep: a tight box around the photo's subject (people or product) and one box per face, in scene units.
+ *  Used by size adapts to re-crop the photo like a designer would. One vision call per creative; the result is cached in meta. */
+export async function findSubject(scene, outDir) {
+  const ab = scene.document.activeArtboard ?? 0; const file = scene.document.artboards?.[ab]?.preview || `preview-${ab}.png`; const ps = scene.ingest?.previewScale || 1;
+  const buf = await readFile(path.join(outDir, file)); const img = new mupdf.Image(buf); const W = img.getWidth(), H = img.getHeight();
+  const client = getClient();
+  const r = await client.messages.create({ model: MODEL, max_tokens: 800,
+    system: `You look at an advertisement and mark what a designer must keep when re-cropping its photo for other sizes. Coordinates are pixels of this ${W}×${H} image. Return ONLY JSON: {"subject": {"x":0,"y":0,"width":0,"height":0} or null, "faces": [{"x":0,"y":0,"width":0,"height":0}], "what": "a few words"}. subject: one tight box around the people or the product in the photo, excluding text, logos and plain colour panels. faces: one tight box per visible face (forehead to chin). Use null and [] when there is no photo.`,
+    messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: buf.toString('base64') } }, { type: 'text', text: 'Mark the subject and the faces.' }] }] });
+  const text = r.content.filter((c) => c.type === 'text').map((c) => c.text).join(''); const m = text.match(/\{[\s\S]*\}/); if (!m) throw new Error('unexpected reply');
+  const out = JSON.parse(m[0]); const conv = (b) => (b && [b.x, b.y, b.width, b.height].every((v) => typeof v === 'number') && b.width > 0 && b.height > 0 ? { x: b.x / ps, y: b.y / ps, width: b.width / ps, height: b.height / ps } : null);
+  return { subject: conv(out.subject), faces: (Array.isArray(out.faces) ? out.faces : []).map(conv).filter(Boolean), what: String(out.what || '').slice(0, 80) };
+}
